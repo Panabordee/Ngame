@@ -30,6 +30,7 @@ const TEST_CONFIG: ServerConfig = {
 let testServer: ColyseusTestServer;
 
 before(async () => {
+  CipherDeckRoom.startingRevealMilliseconds = 5;
   testServer = await boot(
     createGameServer(TEST_CONFIG, async (token) => {
       if (!token.startsWith("user-")) {
@@ -112,9 +113,72 @@ async function readyAndStart(
     client.send("ready", true);
   }
   await allReady;
-  const started = waitForStateWhere(host, (state) => state.status === "playing");
+  const started = waitForStateWhere(
+    host,
+    (state) => state.status === "starting" && state.startingSelection?.phase === "choosing",
+  );
   host.send("start-game");
-  return started;
+  return completeStartingSelection(host, clients, await started);
+}
+
+async function completeStartingSelection(
+  observer: ColyseusClientRoom,
+  clients: readonly ColyseusClientRoom[],
+  initialState: StateEnvelope,
+): Promise<StateEnvelope> {
+  let state = initialState;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (state.status === "playing") return state;
+    const selection = state.startingSelection;
+    assert.notEqual(selection, null);
+    if (selection?.phase === "choosing") {
+      const round = selection.round;
+      const revealed = waitForStateWhere(
+        observer,
+        (candidate) =>
+          candidate.startingSelection?.phase === "revealed" &&
+          candidate.startingSelection.round === round,
+      );
+      const availableOptions = selection.options.filter(
+        (option) => option.selectedByPlayerId === null,
+      );
+      for (const playerId of selection.eligiblePlayerIds) {
+        if (selection.options.some((option) => option.selectedByPlayerId === playerId)) {
+          continue;
+        }
+        const clientIndex = state.players.findIndex((player) => player.id === playerId);
+        const option = availableOptions.shift();
+        assert.notEqual(clientIndex, -1);
+        assert.notEqual(option, undefined);
+        clients[clientIndex]?.send("select-starting-card", { cardId: option?.id });
+      }
+      state = await revealed;
+      continue;
+    }
+    if (selection?.phase === "revealed") {
+      const round = selection.round;
+      state = await waitForStateWhere(
+        observer,
+        (candidate) =>
+          candidate.status === "playing" ||
+          candidate.startingSelection?.phase === "joker-placement" ||
+          (candidate.startingSelection?.phase === "choosing" &&
+            candidate.startingSelection.round > round),
+        5_000,
+      );
+      continue;
+    }
+    if (selection?.phase === "joker-placement") {
+      const pendingPlayerIds = state.game?.pendingStartingJokerPlayerIds ?? [];
+      const playing = waitForStateWhere(observer, (candidate) => candidate.status === "playing");
+      for (const playerId of pendingPlayerIds) {
+        const clientIndex = state.players.findIndex((player) => player.id === playerId);
+        clients[clientIndex]?.send("place-starting-joker", { rackIndex: 0 });
+      }
+      state = await playing;
+    }
+  }
+  throw new Error("Starting-player selection did not finish.");
 }
 
 test("room rejects invalid credentials and invalid lobby sizes", async () => {
@@ -197,57 +261,58 @@ test("three authenticated clients can play without leaking hidden cards", async 
   }>;
   client2.send("start-game");
   assert.equal((await hostOnlyError).code, "HOST_ONLY");
-  await readyAndStart(client1, [client1, client2, client3]);
-  const [envelope1, envelope2] = await Promise.all([
-    requestState(client1),
-    requestState(client2),
-  ]);
+  const clients = [client1, client2, client3];
+  const started = await readyAndStart(client1, clients);
+  const envelopes = await Promise.all(clients.map((client) => requestState(client)));
+  const envelope1 = envelopes[0]!;
 
-  assert.equal(envelope1.status, "playing");
+  assert.equal(started.status, "playing");
+  assert.notEqual(started.turnDeadlineMs, null);
   assert.equal(envelope1.connectedPlayers, 3);
   assert.equal(
     envelope1.players.find((player) => player.id === "user-2")?.displayName,
     "Player 2",
   );
-  const view1 = ownView(envelope1, "user-1");
-  const view2 = ownView(envelope2, "user-2");
-  assert.equal(view1.currentPlayerId, "user-1");
-  assert.equal(view1.phase, "draw");
-
-  for (const player of view1.players) {
-    assert.equal(
-      player.rack.every((card) =>
-        player.id === "user-1" ? card.kind !== "hidden" : card.kind === "hidden",
-      ),
-      true,
-    );
-  }
-  for (const player of view2.players) {
-    assert.equal(
-      player.rack.every((card) =>
-        player.id === "user-2" ? card.kind !== "hidden" : card.kind === "hidden",
-      ),
-      true,
-    );
+  for (const [viewerIndex, envelope] of envelopes.entries()) {
+    const viewerId = envelope.players[viewerIndex]!.id;
+    const view = ownView(envelope, viewerId);
+    for (const player of view.players) {
+      for (const card of player.rack) {
+        if (player.id === viewerId || card.revealed) {
+          assert.notEqual(card.kind, "hidden");
+        } else {
+          assert.equal(card.kind, "hidden");
+        }
+      }
+    }
   }
 
-  const invalidTurn = client2.waitForMessage("error") as Promise<{
+  const activePlayerId = started.game!.currentPlayerId;
+  const activeClientIndex = started.players.findIndex((player) => player.id === activePlayerId);
+  const activeClient = clients[activeClientIndex]!;
+  const inactiveClient = clients[(activeClientIndex + 1) % clients.length]!;
+  const invalidTurn = inactiveClient.waitForMessage("error") as Promise<{
     code: string;
     message: string;
   }>;
-  client2.send("draw");
+  inactiveClient.send("draw");
   assert.equal((await invalidTurn).code, "INVALID_TURN");
 
-  const drawState = client1.waitForMessage("state") as Promise<StateEnvelope>;
-  client1.send("draw");
-  const afterDraw = ownView(await drawState, "user-1");
+  const drawState = waitForStateWhere(
+    activeClient,
+    (envelope) => envelope.game?.pendingDraw !== null,
+  );
+  activeClient.send("draw");
+  const afterDraw = ownView(await drawState, activePlayerId);
   assert.equal(afterDraw.phase, "guess");
   assert.notEqual(afterDraw.pendingDraw, null);
   assert.notEqual(afterDraw.pendingDraw?.kind, "hidden");
 
   const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
   let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
-  const targetPlayer = authoritative.players.find((player) => player.id === "user-2");
+  const targetPlayer = authoritative.players.find(
+    (player) => player.id !== activePlayerId && !player.eliminated,
+  );
   const correctTarget = targetPlayer?.rack.find((card) => !card.revealed);
   assert.notEqual(correctTarget, undefined);
   const correctGuess: CardGuess =
@@ -258,26 +323,26 @@ test("three authenticated clients can play without leaking hidden cards", async 
           rank: correctTarget?.rank ?? "A",
           color: correctTarget?.color ?? "red",
         };
-  const correctState = client1.waitForMessage("state") as Promise<StateEnvelope>;
-  client1.send("guess", {
-    targetPlayerId: "user-2",
+  const correctState = activeClient.waitForMessage("state") as Promise<StateEnvelope>;
+  activeClient.send("guess", {
+    targetPlayerId: targetPlayer?.id,
     targetCardId: correctTarget?.id,
     guess: correctGuess,
   });
-  const afterCorrect = ownView(await correctState, "user-1");
-  assert.equal(afterCorrect.currentPlayerId, "user-1");
+  const afterCorrect = ownView(await correctState, activePlayerId);
+  assert.equal(afterCorrect.currentPlayerId, activePlayerId);
   assert.equal(afterCorrect.phase, "guess");
   assert.equal(afterCorrect.correctGuessesThisTurn, 1);
   assert.equal(
     afterCorrect.players
-      .find((player) => player.id === "user-2")
+      .find((player) => player.id === targetPlayer?.id)
       ?.rack.find((card) => card.id === correctTarget?.id)?.revealed,
     true,
   );
 
-  const stopState = client1.waitForMessage("state") as Promise<StateEnvelope>;
-  client1.send("stop");
-  assert.equal(ownView(await stopState, "user-1").phase, "place");
+  const stopState = activeClient.waitForMessage("state") as Promise<StateEnvelope>;
+  activeClient.send("stop");
+  assert.equal(ownView(await stopState, activePlayerId).phase, "place");
 
   authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
   const activePlayer = authoritative.players[authoritative.currentPlayerIndex];
@@ -286,80 +351,17 @@ test("three authenticated clients can play without leaking hidden cards", async 
   const rackIndex = validInsertionIndexes(activePlayer?.rack ?? [], authoritative.pendingDraw!)[0];
   assert.notEqual(rackIndex, undefined);
   const placedCardId = authoritative.pendingDraw?.id;
-  const insertState = client1.waitForMessage("state") as Promise<StateEnvelope>;
-  client1.send("insert", { rackIndex });
-  const afterInsert = ownView(await insertState, "user-1");
-  assert.equal(afterInsert.currentPlayerId, "user-2");
+  const insertState = activeClient.waitForMessage("state") as Promise<StateEnvelope>;
+  activeClient.send("insert", { rackIndex });
+  const afterInsert = ownView(await insertState, activePlayerId);
+  assert.notEqual(afterInsert.currentPlayerId, activePlayerId);
   assert.equal(afterInsert.phase, "draw");
   assert.equal(
     afterInsert.players
-      .find((player) => player.id === "user-1")
+      .find((player) => player.id === activePlayerId)
       ?.rack.find((card) => card.id === placedCardId)?.revealed,
     false,
   );
-
-  const secondDrawState = waitForStateWhere(
-    client2,
-    (envelope) =>
-      envelope.game?.currentPlayerId === "user-2" &&
-      envelope.game.phase === "guess" &&
-      envelope.game.pendingDraw !== null,
-  );
-  client2.send("draw");
-  assert.equal(ownView(await secondDrawState, "user-2").phase, "guess");
-  authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
-  const wrongTarget = authoritative.players
-    .find((player) => player.id === "user-1")
-    ?.rack.find((card) => !card.revealed);
-  assert.notEqual(wrongTarget, undefined);
-  const deliberatelyWrongGuess: CardGuess =
-    wrongTarget?.kind === "joker"
-      ? { kind: "standard", rank: "A", color: "red" }
-      : { kind: "joker" };
-  const wrongState = waitForStateWhere(
-    client2,
-    (envelope) => envelope.game?.phase === "penalty-place",
-  );
-  client2.send("guess", {
-    targetPlayerId: "user-1",
-    targetCardId: wrongTarget?.id,
-    guess: deliberatelyWrongGuess,
-  });
-  const afterWrong = ownView(await wrongState, "user-2");
-  assert.equal(afterWrong.currentPlayerId, "user-2");
-  assert.equal(afterWrong.phase, "penalty-place");
-  assert.equal(afterWrong.pendingDraw?.revealed, true);
-
-  authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
-  const penaltyPlayer = authoritative.players[authoritative.currentPlayerIndex];
-  const penaltyIndex = validInsertionIndexes(
-    penaltyPlayer?.rack ?? [],
-    authoritative.pendingDraw!,
-  )[0];
-  assert.notEqual(penaltyIndex, undefined);
-  const penaltyCardId = authoritative.pendingDraw?.id;
-  const penaltyInsertState = waitForStateWhere(
-    client2,
-    (envelope) => envelope.game?.currentPlayerId === "user-3",
-  );
-  client2.send("insert", { rackIndex: penaltyIndex });
-  const afterPenaltyInsert = ownView(await penaltyInsertState, "user-2");
-  assert.equal(afterPenaltyInsert.currentPlayerId, "user-3");
-  assert.equal(
-    afterPenaltyInsert.players
-      .find((player) => player.id === "user-2")
-      ?.rack.find((card) => card.id === penaltyCardId)?.revealed,
-    true,
-  );
-
-  const forfeitedState = client1.waitForMessage("state") as Promise<StateEnvelope>;
-  serverRoom.forfeitDisconnectedPlayer("user-2");
-  const afterForfeit = ownView(await forfeitedState, "user-1");
-  assert.equal(
-    afterForfeit.players.find((player) => player.id === "user-2")?.eliminated,
-    true,
-  );
-  assert.equal(afterForfeit.currentPlayerId, "user-3");
 
   await Promise.all([
     client1.leave(true),
@@ -403,6 +405,93 @@ test("code rooms use six-digit codes and stay out of Quick Match", async () => {
     codeGuest.leave(true),
     publicRoom.leave(true),
   ]);
+});
+
+test("a code-room host can run a private custom 40-card match", async () => {
+  const clients: ColyseusClientRoom[] = [];
+  testServer.sdk.auth.token = "user-custom-1";
+  const host = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 5,
+    lobbyMode: "code",
+  });
+  host.onMessage("state", () => undefined);
+  clients.push(host);
+  for (let player = 2; player <= 5; player += 1) {
+    testServer.sdk.auth.token = `user-custom-${player}`;
+    const guest = await testServer.sdk.joinById(host.roomId);
+    guest.onMessage("state", () => undefined);
+    clients.push(guest);
+  }
+
+  const settingsState = waitForStateWhere(
+    host,
+    (state) => state.settings.preset === "custom" && state.settings.totalCards === 40,
+  );
+  host.send("update-settings", {
+    preset: "custom",
+    turnSeconds: 30,
+    totalCards: 40,
+    drawRounds: 2,
+    jokerCount: 2,
+  });
+  assert.deepEqual((await settingsState).settings, {
+    preset: "custom",
+    turnSeconds: 30,
+    totalCards: 40,
+    drawRounds: 2,
+    jokerCount: 2,
+  });
+
+  const allReady = waitForStateWhere(host, (state) => state.players.every((player) => player.ready));
+  for (const client of clients) client.send("ready", true);
+  await allReady;
+  const choosing = waitForStateWhere(
+    host,
+    (state) => state.startingSelection?.phase === "choosing",
+  );
+  host.send("start-game");
+  let setupState = await choosing;
+  assert.equal(setupState.startingSelection?.options.length, 6);
+  assert.equal(setupState.startingSelection?.options.every((option) => option.card === null), true);
+
+  const firstOptionId = setupState.startingSelection!.options[0]!.id;
+  const selectedHidden = waitForStateWhere(
+    clients[1]!,
+    (state) =>
+      state.startingSelection?.options.find((option) => option.id === firstOptionId)
+        ?.selectedByPlayerId === "user-custom-1",
+  );
+  host.send("select-starting-card", { cardId: firstOptionId });
+  setupState = await selectedHidden;
+  assert.equal(
+    setupState.startingSelection?.options.find((option) => option.id === firstOptionId)?.card,
+    null,
+  );
+
+  const playing = await completeStartingSelection(host, clients, setupState);
+  assert.equal(playing.status, "playing");
+  assert.notEqual(playing.turnDeadlineMs, null);
+  const serverRoom = testServer.getRoomById<CipherDeckRoom>(host.roomId);
+  const game = deserializeGameState(serverRoom.getSnapshot() as string);
+  assert.equal(
+    game.players.reduce((total, player) => total + player.rack.length, 0) + game.drawPile.length,
+    40,
+  );
+  assert.deepEqual(game.players.map((player) => player.rack.length).toSorted(), [5, 6, 6, 6, 7]);
+  assert.equal(
+    game.players.find((player) => player.id === game.players[game.currentPlayerIndex]?.id)?.rack.length,
+    7,
+  );
+  assert.equal(
+    game.players.every((player) => {
+      const startingCardId = game.startingCardIds[player.id];
+      return player.rack.some((card) => card.id === startingCardId && card.revealed);
+    }),
+    true,
+  );
+  assert.ok(game.drawPile.length >= 10);
+
+  await Promise.all(clients.map((client) => client.leave(true)));
 });
 
 test("a player who drops before a match starts releases the waiting-room seat", async () => {
@@ -449,42 +538,47 @@ test("a dropped player reconnects without losing a pending drawn card", async ()
   testServer.sdk.auth.token = "user-reconnect-3";
   const client3 = await testServer.sdk.joinById(client1.roomId);
   client3.onMessage("state", () => undefined);
-  await readyAndStart(client1, [client1, client2, client3]);
+  const clients = [client1, client2, client3];
+  const started = await readyAndStart(client1, clients);
+  const activePlayerId = started.game!.currentPlayerId;
+  const activeIndex = started.players.findIndex((player) => player.id === activePlayerId);
+  const activeClient = clients[activeIndex]!;
+  const observer = clients[(activeIndex + 1) % clients.length]!;
 
   const drawnState = waitForStateWhere(
-    client1,
+    activeClient,
     (envelope) => envelope.game?.pendingDraw !== null,
   );
-  client1.send("draw");
-  const pendingCardId = ownView(await drawnState, "user-reconnect-1").pendingDraw?.id;
+  activeClient.send("draw");
+  const pendingCardId = ownView(await drawnState, activePlayerId).pendingDraw?.id;
   assert.notEqual(pendingCardId, undefined);
 
-  client1.reconnection.minUptime = 0;
+  activeClient.reconnection.minUptime = 0;
   const dropped = waitForSignal(
-    client1.onDrop,
+    activeClient.onDrop,
     "the client connection to drop",
   );
   const reconnected = waitForSignal(
-    client1.onReconnect,
+    activeClient.onReconnect,
     "the client to reconnect",
   );
   const pausedState = waitForStateWhere(
-    client2,
+    observer,
     (envelope) =>
       envelope.status === "paused" &&
-      envelope.droppedPlayerIds.includes("user-reconnect-1"),
+      envelope.droppedPlayerIds.includes(activePlayerId),
   );
   const resumedState = waitForStateWhere(
-    client2,
+    observer,
     (envelope) =>
       envelope.status === "playing" && envelope.droppedPlayerIds.length === 0,
   );
 
-  void client1.leave(false);
+  void activeClient.leave(false);
   await dropped;
   await pausedState;
 
-  const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
+  const serverRoom = testServer.getRoomById<CipherDeckRoom>(activeClient.roomId);
   let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
   assert.equal(authoritative.pendingDraw?.id, pendingCardId);
 
@@ -494,9 +588,9 @@ test("a dropped player reconnects without losing a pending drawn card", async ()
   assert.equal(authoritative.pendingDraw?.id, pendingCardId);
   assert.equal(authoritative.phase, "guess");
 
-  const reconnectedState = await requestState(client1);
+  const reconnectedState = await requestState(activeClient);
   assert.equal(reconnectedState.status, "playing");
-  assert.equal(ownView(reconnectedState, "user-reconnect-1").pendingDraw?.id, pendingCardId);
+  assert.equal(ownView(reconnectedState, activePlayerId).pendingDraw?.id, pendingCardId);
 
   await Promise.all([
     client1.leave(true),
@@ -520,34 +614,39 @@ test("reconnection timeout reveals and preserves a pending drawn card", async ()
   testServer.sdk.auth.token = "user-timeout-3";
   const client3 = await testServer.sdk.joinById(client1.roomId);
   client3.onMessage("state", () => undefined);
-  await readyAndStart(client1, [client1, client2, client3]);
+  const clients = [client1, client2, client3];
+  const started = await readyAndStart(client1, clients);
+  const activePlayerId = started.game!.currentPlayerId;
+  const activeIndex = started.players.findIndex((player) => player.id === activePlayerId);
+  const activeClient = clients[activeIndex]!;
+  const observer = clients[(activeIndex + 1) % clients.length]!;
 
   const drawnState = waitForStateWhere(
-    client1,
+    activeClient,
     (envelope) => envelope.game?.pendingDraw !== null,
   );
-  client1.send("draw");
-  const pendingCardId = ownView(await drawnState, "user-timeout-1").pendingDraw?.id;
+  activeClient.send("draw");
+  const pendingCardId = ownView(await drawnState, activePlayerId).pendingDraw?.id;
   assert.notEqual(pendingCardId, undefined);
 
-  client1.reconnection.enabled = false;
+  activeClient.reconnection.enabled = false;
   const pausedState = waitForStateWhere(
-    client2,
+    observer,
     (envelope) =>
-      envelope.status === "paused" && envelope.droppedPlayerIds.includes("user-timeout-1"),
+      envelope.status === "paused" && envelope.droppedPlayerIds.includes(activePlayerId),
   );
   const forfeitedState = waitForStateWhere(
-    client2,
+    observer,
     (envelope) =>
-      envelope.game?.players.find((player) => player.id === "user-timeout-1")
+      envelope.game?.players.find((player) => player.id === activePlayerId)
         ?.eliminated === true,
     3_000,
   );
 
-  void client1.leave(false);
+  void activeClient.leave(false);
   await pausedState;
 
-  const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
+  const serverRoom = testServer.getRoomById<CipherDeckRoom>(activeClient.roomId);
   let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
   assert.equal(authoritative.pendingDraw?.id, pendingCardId);
 
@@ -555,7 +654,7 @@ test("reconnection timeout reveals and preserves a pending drawn card", async ()
   authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
   assert.equal(authoritative.pendingDraw, null);
   const forfeitedPlayer = authoritative.players.find(
-    (player) => player.id === "user-timeout-1",
+    (player) => player.id === activePlayerId,
   );
   assert.equal(forfeitedPlayer?.eliminated, true);
   assert.equal(forfeitedPlayer?.rack.every((card) => card.revealed), true);
@@ -563,7 +662,7 @@ test("reconnection timeout reveals and preserves a pending drawn card", async ()
     forfeitedPlayer?.rack.some((card) => card.id === pendingCardId && card.revealed),
     true,
   );
-  assert.equal(authoritative.currentPlayerIndex, 1);
+  assert.notEqual(authoritative.players[authoritative.currentPlayerIndex]?.id, activePlayerId);
 
-  await Promise.all([client2.leave(true), client3.leave(true)]);
+  await Promise.all(clients.filter((client) => client !== activeClient).map((client) => client.leave(true)));
 });

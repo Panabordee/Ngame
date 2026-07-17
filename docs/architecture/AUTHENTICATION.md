@@ -11,7 +11,7 @@ FastAPI is the authentication authority. NGAME never receives a Google password.
 5. FastAPI stores the stable Google `sub`, user profile, and a hashed refresh-session token.
 6. The browser receives the opaque refresh token in a host-only `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production).
 7. `POST /auth/refresh` rotates that cookie and returns a short-lived RS256 access JWT.
-8. The browser sends the access JWT to Colyseus; realtime verifies issuer, audience, type, signature, and expiry.
+8. The browser sends the access JWT to Colyseus; realtime verifies issuer, audience, type, signature, expiry, and the server-issued `name` display claim.
 
 ## Endpoints
 
@@ -22,16 +22,19 @@ FastAPI is the authentication authority. NGAME never receives a Google password.
 | `POST` | `/auth/refresh` | rotate refresh session and issue access JWT |
 | `POST` | `/auth/logout` | revoke the current refresh session and clear cookie |
 | `GET` | `/auth/me` | return the authenticated profile |
+| `PATCH` | `/auth/me` | update display name and unique username |
 
 There are no password registration or login endpoints.
 
 ## Stored data
 
-- `users`: display name and account status
+- `users`: display name, normalized unique username, Google avatar URL, and account status
 - `auth_identities`: unique Google subject, unique normalized verified email, provider
 - `refresh_sessions`: hashed opaque token, expiry, revocation, rotation link, client metadata
 
 Migration `20260717_0002` deletes all legacy password users and their refresh sessions, then drops `password_credentials`. Downgrading recreates the empty table but cannot restore deleted accounts.
+
+Migration `20260717_0004` adds the editable username and Google-avatar profile fields. Usernames are 3–20 ASCII letters, numbers, or underscores and are stored case-folded.
 
 ## Security requirements
 

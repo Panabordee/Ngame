@@ -5,17 +5,23 @@ import {
   RuleViolation,
   chooseJokerCount,
   computeInitialHandSizes,
+  createCustomDeck,
   createDeck,
   createInitialGame,
+  createInitialGameWithStartingCards,
   deserializeGameState,
   drawCard,
+  drawFreshStartingCards,
   forfeitPlayer,
+  highestStartingPlayerIds,
   insertCard,
   insertDrawnCard,
   isValidRackOrder,
+  placeStartingJoker,
   projectStateForPlayer,
   revealSelfPenalty,
   resolveGuess,
+  resolveTurnTimeout,
   serializeGameState,
   stopGuessingAndPlace,
   validInsertionIndexes,
@@ -67,6 +73,8 @@ function fixtureState(overrides: Partial<GameState> = {}): GameState {
     pendingDraw: null,
     drawnCardId: null,
     correctGuessesThisTurn: 0,
+    startingCardIds: {},
+    pendingStartingJokerPlayerIds: [],
     winnerId: null,
     turn: 4,
     ...overrides,
@@ -107,6 +115,95 @@ describe("deck setup and dealing", () => {
         assert.ok(game.drawPile.length >= playerCount * 4);
       }
     }
+  });
+
+  it("builds a custom 40-card deck and preserves a two-round reserve for five players", () => {
+    let randomValue = 0;
+    const random = () => {
+      randomValue = (randomValue + 0.371) % 1;
+      return randomValue;
+    };
+    const deck = createCustomDeck(40, 3, random, opaqueId);
+    assert.equal(deck.length, 40);
+    assert.equal(deck.filter((card) => card.kind === "joker").length, 3);
+    assert.equal(new Set(deck.map((card) => card.id)).size, 40);
+    assert.deepEqual(computeInitialHandSizes(40, 5, 2), [7, 6, 6, 6, 5]);
+  });
+
+  it("counts revealed starting cards in each hand and lets the winner start", () => {
+    const deck = createDeck(2, opaqueId);
+    const assignments = [
+      { playerId: "p1", card: deck[0]! },
+      { playerId: "p2", card: deck[13]! },
+      { playerId: "p3", card: deck[26]! },
+    ];
+    const assignedIds = new Set(assignments.map((assignment) => assignment.card.id));
+    const game = createInitialGameWithStartingCards(
+      ["p1", "p2", "p3"],
+      deck.filter((card) => !assignedIds.has(card.id)),
+      assignments,
+      "p2",
+      4,
+    );
+    assert.deepEqual(game.players.map((player) => player.rack.length), [7, 9, 8]);
+    assert.equal(game.players[game.currentPlayerIndex]?.id, "p2");
+    assert.equal(game.phase, "draw");
+    for (const assignment of assignments) {
+      const card = game.players
+        .find((player) => player.id === assignment.playerId)
+        ?.rack.find((candidate) => candidate.id === assignment.card.id);
+      assert.equal(card?.revealed, true);
+    }
+  });
+
+  it("requires a starting Joker owner to choose any rack slot", () => {
+    const deck = createDeck(2, opaqueId);
+    const joker = deck.find((card) => card.kind === "joker")!;
+    const assignments = [
+      { playerId: "p1", card: deck[0]! },
+      { playerId: "p2", card: joker },
+      { playerId: "p3", card: deck[26]! },
+    ];
+    const assignedIds = new Set(assignments.map((assignment) => assignment.card.id));
+    const initial = createInitialGameWithStartingCards(
+      ["p1", "p2", "p3"],
+      deck.filter((card) => !assignedIds.has(card.id)),
+      assignments,
+      "p2",
+      4,
+    );
+    const rackLength = initial.players[1]!.rack.length;
+    assert.equal(initial.phase, "starter-place");
+    for (let rackIndex = 0; rackIndex < rackLength; rackIndex += 1) {
+      const placed = placeStartingJoker(initial, "p2", rackIndex);
+      assert.equal(placed.players[1]?.rack[rackIndex]?.id, joker.id);
+      assert.equal(placed.phase, "draw");
+      assert.deepEqual(placed.pendingStartingJokerPlayerIds, []);
+    }
+  });
+
+  it("redraws equal highest ranks and multiple Jokers from a fresh set", () => {
+    assert.deepEqual(
+      highestStartingPlayerIds([
+        { playerId: "p1", card: standard("king-red", "K", "red", "hearts") },
+        { playerId: "p2", card: standard("king-black", "K", "black", "clubs") },
+        { playerId: "p3", card: standard("queen", "Q", "red", "diamonds") },
+      ]),
+      ["p1", "p2"],
+    );
+    assert.deepEqual(
+      highestStartingPlayerIds([
+        { playerId: "p1", card: { id: "joker-1", kind: "joker", revealed: false } },
+        { playerId: "p2", card: { id: "joker-2", kind: "joker", revealed: false } },
+      ]),
+      ["p1", "p2"],
+    );
+
+    const cards = createDeck(2, opaqueId).slice(0, 12);
+    const precedingIds = new Set(cards.slice(0, 6).map((card) => card.id));
+    const fresh = drawFreshStartingCards(cards, precedingIds, () => 0);
+    assert.equal(fresh.selected.length, 6);
+    assert.equal(fresh.selected.every((card) => !precedingIds.has(card.id)), true);
   });
 });
 
@@ -167,6 +264,36 @@ describe("rack ordering", () => {
 });
 
 describe("authoritative turn resolution", () => {
+  it("resolves timer expiry without trusting a client action", () => {
+    const skipped = resolveTurnTimeout(
+      fixtureState({
+        phase: "draw",
+        drawPile: [standard("draw", "4", "red", "hearts")],
+      }),
+      () => 0,
+    );
+    assert.equal(skipped.currentPlayerIndex, 1);
+    assert.equal(skipped.turn, 5);
+
+    const pending = resolveTurnTimeout(
+      fixtureState({
+        phase: "guess",
+        pendingDraw: standard("pending-timeout", "4", "red", "hearts"),
+      }),
+      () => 0,
+    );
+    const timedOutCard = pending.players[0]?.rack.find(
+      (card) => card.id === "pending-timeout",
+    );
+    assert.equal(timedOutCard?.revealed, true);
+    assert.equal(pending.currentPlayerIndex, 1);
+
+    const penalized = resolveTurnTimeout(fixtureState(), () => 0);
+    assert.equal(penalized.players[0]?.rack[0]?.revealed, true);
+    assert.equal(penalized.phase, "game-over");
+    assert.equal(penalized.winnerId, "p2");
+  });
+
   it("requires a guess before placement, then allows stop and hidden placement after a correct guess", () => {
     const state = fixtureState({
       players: [
@@ -417,5 +544,26 @@ describe("privacy and reconnect state", () => {
     assert.equal(forfeited.pendingDraw, null);
     assert.equal(forfeited.players[forfeited.currentPlayerIndex]?.id, "p2");
     assert.equal(forfeited.phase, "draw");
+  });
+
+  it("does not strand a match when a starting-Joker owner forfeits", () => {
+    const state = fixtureState({
+      phase: "starter-place",
+      startingCardIds: { p1: "starter-joker" },
+      pendingStartingJokerPlayerIds: ["p1"],
+      players: [
+        {
+          id: "p1",
+          rack: [{ id: "starter-joker", kind: "joker", revealed: true }],
+          eliminated: false,
+        },
+        { id: "p2", rack: [standard("p2", "7", "black", "clubs")], eliminated: false },
+        { id: "p3", rack: [standard("p3", "K", "red", "diamonds")], eliminated: false },
+      ],
+    });
+    const forfeited = forfeitPlayer(state, "p1");
+    assert.equal(forfeited.phase, "draw");
+    assert.deepEqual(forfeited.pendingStartingJokerPlayerIds, []);
+    assert.equal(forfeited.players[forfeited.currentPlayerIndex]?.id, "p2");
   });
 });

@@ -24,7 +24,7 @@ const privateKey = await importPKCS8(await readFile(jwtPrivateKeyFile, "utf8"), 
 
 async function createSmokeUser(): Promise<SmokeUser> {
   const userId = randomUUID();
-  const accessToken = await new SignJWT({ typ: "access" })
+  const accessToken = await new SignJWT({ typ: "access", name: `Smoke ${userId.slice(0, 6)}` })
     .setProtectedHeader({ alg: "RS256" })
     .setSubject(userId)
     .setIssuer(jwtIssuer)
@@ -66,6 +66,26 @@ async function requestState(room: Room): Promise<StateEnvelope> {
   });
 }
 
+function waitForStateWhere(
+  room: Room,
+  predicate: (state: StateEnvelope) => boolean,
+  timeoutMilliseconds = 5_000,
+): Promise<StateEnvelope> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for the expected room state."));
+    }, timeoutMilliseconds);
+    const unsubscribe = room.onMessage<StateEnvelope>("state", (state) => {
+      if (predicate(state)) {
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(state);
+      }
+    });
+  });
+}
+
 const healthResponses = await Promise.all([
   fetch(`${apiUrl}/healthz`),
   fetch(`${realtimeUrl}/healthz`),
@@ -99,24 +119,70 @@ try {
   }
   assert.equal(new Set(rooms.map((room) => room.roomId)).size, 1);
 
+  const allReady = waitForStateWhere(ownerRoom, (state) =>
+    state.players.length === rooms.length && state.players.every((player) => player.ready),
+  );
+  for (const room of rooms) room.send("ready", true);
+  await allReady;
+  const choosing = waitForStateWhere(
+    ownerRoom,
+    (state) => state.startingSelection?.phase === "choosing",
+  );
+  ownerRoom.send("start-game");
+  let setupState = await choosing;
+  for (let attempt = 0; attempt < 30 && setupState.status !== "playing"; attempt += 1) {
+    const selection = setupState.startingSelection;
+    if (selection?.phase === "choosing") {
+      const available = selection.options.filter((option) => option.selectedByPlayerId === null);
+      const revealed = waitForStateWhere(
+        ownerRoom,
+        (state) => state.startingSelection?.phase === "revealed" && state.startingSelection.round === selection.round,
+      );
+      for (const playerId of selection.eligiblePlayerIds) {
+        if (selection.options.some((option) => option.selectedByPlayerId === playerId)) continue;
+        const roomIndex = players.findIndex((player) => player.userId === playerId);
+        rooms[roomIndex]?.send("select-starting-card", { cardId: available.shift()?.id });
+      }
+      setupState = await revealed;
+    } else if (selection?.phase === "revealed") {
+      const round = selection.round;
+      setupState = await waitForStateWhere(
+        ownerRoom,
+        (state) =>
+          state.status === "playing" ||
+          state.startingSelection?.phase === "joker-placement" ||
+          (state.startingSelection?.phase === "choosing" && state.startingSelection.round > round),
+      );
+    } else if (selection?.phase === "joker-placement") {
+      const playing = waitForStateWhere(ownerRoom, (state) => state.status === "playing");
+      for (const playerId of setupState.game?.pendingStartingJokerPlayerIds ?? []) {
+        const roomIndex = players.findIndex((player) => player.userId === playerId);
+        rooms[roomIndex]?.send("place-starting-joker", { rackIndex: 0 });
+      }
+      setupState = await playing;
+    }
+  }
+  assert.equal(setupState.status, "playing");
+
   const views = await Promise.all(rooms.map(requestState));
   for (let viewerIndex = 0; viewerIndex < views.length; viewerIndex += 1) {
     const view = views[viewerIndex];
     const viewerId = players[viewerIndex]?.userId;
     assert.equal(view?.status, "playing");
     assert.equal(view?.connectedPlayers, 3);
-    assert.equal(view?.game?.currentPlayerId, players[0]?.userId);
     for (const player of view?.game?.players ?? []) {
       assert.equal(
         player.rack.every((card) =>
-          player.id === viewerId ? card.kind !== "hidden" : card.kind === "hidden",
-        ),
+          player.id === viewerId || card.revealed
+            ? card.kind !== "hidden"
+            : card.kind === "hidden"),
         true,
       );
     }
   }
 
-  const activeRoom = rooms[0];
+  const activePlayerId = views[0]?.game?.currentPlayerId;
+  const activeRoom = rooms[players.findIndex((player) => player.userId === activePlayerId)];
   if (activeRoom === undefined) throw new Error("The first room was not created.");
   const drewState = new Promise<StateEnvelope>((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -142,7 +208,7 @@ try {
       roomId: rooms[0]?.roomId,
       roomCode: codeState.roomCode,
       players: players.map((player) => player.userId),
-      verified: ["signed-jwt", "isolated-room-join", "privacy", "draw", "room-code"],
+      verified: ["signed-jwt", "room-code", "host-ready", "starting-selection", "privacy", "draw"],
     }, null, 2)}\n`,
   );
 } finally {

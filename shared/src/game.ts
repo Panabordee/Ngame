@@ -1,25 +1,43 @@
 import { RuleViolation } from "./errors.ts";
-import { insertCard, sortRackKeepingJokers } from "./rack.ts";
+import { insertCard, sortRackKeepingJokers, validInsertionIndexes } from "./rack.ts";
 import type {
   Card,
   GameState,
   GuessAction,
   GuessResolution,
   PlayerState,
+  RandomSource,
+  StartingCardAssignment,
 } from "./types.ts";
 
-export function computeInitialHandSizes(deckSize: number, playerCount: number): number[] {
+export function computeInitialHandSizes(
+  deckSize: number,
+  playerCount: number,
+  drawRounds = 4,
+): number[] {
   if (!Number.isInteger(playerCount) || playerCount < 3 || playerCount > 6) {
     throw new RuleViolation(
       "INVALID_PLAYER_COUNT",
       "CipherDeck currently supports between three and six players.",
     );
   }
-  if (!Number.isInteger(deckSize) || deckSize < 54 || deckSize > 56) {
-    throw new RuleViolation("INVALID_DECK", "The deck must contain 54 to 56 cards.");
+  if (!Number.isInteger(drawRounds) || drawRounds < 1 || drawRounds > 8) {
+    throw new RuleViolation("INVALID_DRAW_ROUNDS", "Draw rounds must be between one and eight.");
+  }
+  if (!Number.isInteger(deckSize) || deckSize < 24 || deckSize > 56) {
+    throw new RuleViolation("INVALID_DECK", "The deck must contain 24 to 56 cards.");
   }
 
-  const base = Math.min(8, Math.floor((deckSize - 4 * playerCount) / playerCount));
+  const base = Math.min(
+    8,
+    Math.floor((deckSize - drawRounds * playerCount) / playerCount),
+  );
+  if (base < 2) {
+    throw new RuleViolation(
+      "INVALID_DECK",
+      "The deck is too small for the player count and draw-round reserve.",
+    );
+  }
   return Array.from({ length: playerCount }, (_, index) => {
     if (index === 0) {
       return base + 1;
@@ -37,25 +55,75 @@ function assertUniqueCards(deck: readonly Card[]): void {
   }
 }
 
-export function createInitialGame(playerIds: readonly string[], shuffledDeck: readonly Card[]): GameState {
-  const handSizes = computeInitialHandSizes(shuffledDeck.length, playerIds.length);
+interface InitialGameOptions {
+  readonly drawRounds: number;
+  readonly startingCards: readonly StartingCardAssignment[];
+  readonly startingPlayerId: string | null;
+}
+
+function createGame(
+  playerIds: readonly string[],
+  shuffledDeck: readonly Card[],
+  options: InitialGameOptions,
+): GameState {
+  const totalDeckSize = shuffledDeck.length + options.startingCards.length;
+  const turnOrderHandSizes = computeInitialHandSizes(
+    totalDeckSize,
+    playerIds.length,
+    options.drawRounds,
+  );
   if (new Set(playerIds).size !== playerIds.length) {
     throw new RuleViolation("DUPLICATE_PLAYER", "Player IDs must be unique.");
   }
   if (playerIds.some((playerId) => playerId.length === 0)) {
     throw new RuleViolation("INVALID_PLAYER_COUNT", "Player IDs cannot be empty.");
   }
-  assertUniqueCards(shuffledDeck);
+  const startingPlayerIndex = options.startingPlayerId === null
+    ? 0
+    : playerIds.indexOf(options.startingPlayerId);
+  if (startingPlayerIndex < 0) {
+    throw new RuleViolation("INVALID_STARTING_PLAYER", "The starting player is not in this match.");
+  }
+  const handSizes = playerIds.map((_, playerIndex) => {
+    const turnOffset =
+      (playerIndex - startingPlayerIndex + playerIds.length) % playerIds.length;
+    const handSize = turnOrderHandSizes[turnOffset];
+    if (handSize === undefined) {
+      throw new RuleViolation("INVALID_PLAYER_COUNT", "A player has no initial hand size.");
+    }
+    return handSize;
+  });
+  assertUniqueCards([
+    ...shuffledDeck,
+    ...options.startingCards.map((assignment) => assignment.card),
+  ]);
+  if (
+    options.startingCards.length !== 0 &&
+    (options.startingCards.length !== playerIds.length ||
+      new Set(options.startingCards.map((assignment) => assignment.playerId)).size !==
+        playerIds.length ||
+      options.startingCards.some((assignment) => !playerIds.includes(assignment.playerId)))
+  ) {
+    throw new RuleViolation(
+      "INVALID_STARTING_CARDS",
+      "Starting-card assignments must contain exactly one card for every player.",
+    );
+  }
 
   const racks = playerIds.map((): Card[] => []);
   let deckIndex = 0;
-  let cardsRemainingToDeal = handSizes.reduce((total, handSize) => total + handSize, 0);
+  let cardsRemainingToDeal = handSizes.reduce((total, handSize) => total + handSize, 0) -
+    options.startingCards.length;
 
   while (cardsRemainingToDeal > 0) {
     for (let playerIndex = 0; playerIndex < playerIds.length; playerIndex += 1) {
       const rack = racks[playerIndex];
       const handSize = handSizes[playerIndex];
-      if (rack === undefined || handSize === undefined || rack.length >= handSize) {
+      const reservedStartingCard = options.startingCards.some(
+        (assignment) => assignment.playerId === playerIds[playerIndex],
+      );
+      const dealtHandSize = handSize === undefined ? undefined : handSize - (reservedStartingCard ? 1 : 0);
+      if (rack === undefined || dealtHandSize === undefined || rack.length >= dealtHandSize) {
         continue;
       }
       const card = shuffledDeck[deckIndex];
@@ -68,29 +136,73 @@ export function createInitialGame(playerIds: readonly string[], shuffledDeck: re
     }
   }
 
-  const players: PlayerState[] = playerIds.map((id, index) => ({
-    id,
-    rack: sortRackKeepingJokers(racks[index] ?? []),
-    eliminated: false,
-  }));
+  const startingCardIds: Record<string, string> = {};
+  const pendingStartingJokerPlayerIds: string[] = [];
+  const players: PlayerState[] = playerIds.map((id, index) => {
+    let rack = sortRackKeepingJokers(racks[index] ?? []);
+    const assignment = options.startingCards.find((candidate) => candidate.playerId === id);
+    if (assignment !== undefined) {
+      const startingCard = structuredClone(assignment.card) as Card;
+      startingCard.revealed = true;
+      startingCardIds[id] = startingCard.id;
+      if (startingCard.kind === "joker") {
+        rack = insertCard(rack, startingCard, rack.length);
+        pendingStartingJokerPlayerIds.push(id);
+      } else {
+        const insertionIndex = validInsertionIndexes(rack, startingCard)[0];
+        if (insertionIndex === undefined) {
+          throw new RuleViolation("INVALID_STARTING_CARDS", "A starting card has no legal rack slot.");
+        }
+        rack = insertCard(rack, startingCard, insertionIndex);
+      }
+    }
+    return { id, rack, eliminated: false };
+  });
   const drawPile = structuredClone(shuffledDeck.slice(deckIndex)) as Card[];
 
-  if (drawPile.length < playerIds.length * 4) {
-    throw new RuleViolation("INVALID_DECK", "The initial deal must preserve four draw rounds.");
+  if (drawPile.length < playerIds.length * options.drawRounds) {
+    throw new RuleViolation("INVALID_DECK", "The initial deal does not preserve the draw reserve.");
   }
 
   return {
     version: 1,
     players,
     drawPile,
-    currentPlayerIndex: 0,
-    phase: "draw",
+    currentPlayerIndex: startingPlayerIndex,
+    phase: pendingStartingJokerPlayerIds.length > 0 ? "starter-place" : "draw",
     pendingDraw: null,
     drawnCardId: null,
     correctGuessesThisTurn: 0,
+    startingCardIds,
+    pendingStartingJokerPlayerIds,
     winnerId: null,
     turn: 1,
   };
+}
+
+export function createInitialGame(
+  playerIds: readonly string[],
+  shuffledDeck: readonly Card[],
+): GameState {
+  return createGame(playerIds, shuffledDeck, {
+    drawRounds: 4,
+    startingCards: [],
+    startingPlayerId: null,
+  });
+}
+
+export function createInitialGameWithStartingCards(
+  playerIds: readonly string[],
+  shuffledDeckWithoutStartingCards: readonly Card[],
+  startingCards: readonly StartingCardAssignment[],
+  startingPlayerId: string,
+  drawRounds: number,
+): GameState {
+  return createGame(playerIds, shuffledDeckWithoutStartingCards, {
+    drawRounds,
+    startingCards,
+    startingPlayerId,
+  });
 }
 
 function cloneState(state: GameState): GameState {
@@ -114,6 +226,92 @@ function assertActor(state: GameState, actorId: string): PlayerState {
     throw new RuleViolation("INVALID_TURN", "Only the active player may act.");
   }
   return actor;
+}
+
+export function placeStartingJoker(
+  state: GameState,
+  playerId: string,
+  rackIndex: number,
+): GameState {
+  if (
+    state.phase !== "starter-place" ||
+    !state.pendingStartingJokerPlayerIds.includes(playerId)
+  ) {
+    throw new RuleViolation(
+      "WRONG_PHASE",
+      "This player does not have a starting Joker awaiting placement.",
+    );
+  }
+  const next = cloneState(state);
+  const player = next.players.find((candidate) => candidate.id === playerId);
+  const startingCardId = next.startingCardIds[playerId];
+  if (player === undefined || startingCardId === undefined) {
+    throw new RuleViolation("INVALID_TARGET", "The starting Joker could not be found.");
+  }
+  const currentIndex = player.rack.findIndex((card) => card.id === startingCardId);
+  const joker = player.rack[currentIndex];
+  if (currentIndex < 0 || joker?.kind !== "joker" || !joker.revealed) {
+    throw new RuleViolation("INVALID_TARGET", "The starting card is not a revealed Joker.");
+  }
+  const rackWithoutJoker = player.rack.toSpliced(currentIndex, 1);
+  player.rack = insertCard(rackWithoutJoker, joker, rackIndex);
+  next.pendingStartingJokerPlayerIds = next.pendingStartingJokerPlayerIds.filter(
+    (candidate) => candidate !== playerId,
+  );
+  if (next.pendingStartingJokerPlayerIds.length === 0) {
+    next.phase = "draw";
+  }
+  return next;
+}
+
+function randomIndex(length: number, random: RandomSource): number {
+  const value = random();
+  if (!Number.isFinite(value) || value < 0 || value >= 1) {
+    throw new RuleViolation("INVALID_RANDOM_VALUE", "Random sources must return a value in [0, 1). ");
+  }
+  return Math.floor(value * length);
+}
+
+export function resolveTurnTimeout(state: GameState, random: RandomSource): GameState {
+  if (state.phase === "starter-place" || state.phase === "game-over") {
+    throw new RuleViolation("WRONG_PHASE", "A normal turn timer is not active in this phase.");
+  }
+  const next = cloneState(state);
+  const actor = currentPlayer(next);
+
+  if (next.pendingDraw !== null) {
+    next.pendingDraw.revealed = true;
+    const insertionIndexes = validInsertionIndexes(actor.rack, next.pendingDraw);
+    const rackIndex = insertionIndexes[0];
+    if (rackIndex === undefined) {
+      throw new RuleViolation("INVALID_INSERTION", "The timed-out card has no legal rack slot.");
+    }
+    actor.rack = insertCard(actor.rack, next.pendingDraw, rackIndex);
+    next.drawnCardId = next.pendingDraw.id;
+    next.pendingDraw = null;
+    updateEndGame(next);
+    if ((next.phase as GameState["phase"]) !== "game-over") {
+      advanceTurn(next);
+    }
+    return next;
+  }
+
+  if (next.phase === "guess" || next.phase === "self-penalty") {
+    const unrevealed = actor.rack.filter((card) => !card.revealed);
+    const penalty = unrevealed[randomIndex(unrevealed.length, random)];
+    if (penalty === undefined) {
+      throw new RuleViolation("INVALID_TARGET", "No unrevealed card is available for timeout penalty.");
+    }
+    penalty.revealed = true;
+    updateEndGame(next);
+    if ((next.phase as GameState["phase"]) !== "game-over") {
+      advanceTurn(next);
+    }
+    return next;
+  }
+
+  advanceTurn(next);
+  return next;
 }
 
 export function drawCard(state: GameState, actorId: string): GameState {
@@ -313,11 +511,30 @@ export function forfeitPlayer(state: GameState, playerId: string): GameState {
     next.pendingDraw = null;
     next.drawnCardId = pendingDraw.id;
   }
+  const wasStartingJokerPlacement = next.phase === "starter-place";
+  if (wasStartingJokerPlacement) {
+    next.pendingStartingJokerPlayerIds = next.pendingStartingJokerPlayerIds.filter(
+      (candidate) => candidate !== playerId,
+    );
+  }
   for (const card of player.rack) {
     card.revealed = true;
   }
 
   updateEndGame(next);
+  if (next.phase !== "game-over" && wasStartingJokerPlacement) {
+    if (playerIndex === next.currentPlayerIndex) {
+      for (let offset = 1; offset <= next.players.length; offset += 1) {
+        const candidateIndex = (playerIndex + offset) % next.players.length;
+        if (next.players[candidateIndex]?.eliminated === false) {
+          next.currentPlayerIndex = candidateIndex;
+          break;
+        }
+      }
+    }
+    next.phase = next.pendingStartingJokerPlayerIds.length > 0 ? "starter-place" : "draw";
+    return next;
+  }
   if (next.phase !== "game-over" && playerIndex === next.currentPlayerIndex) {
     advanceTurn(next);
   }

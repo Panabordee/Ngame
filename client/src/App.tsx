@@ -3,6 +3,7 @@ import { Client, type Room } from "@colyseus/sdk";
 import {
   type CardColor,
   type Rank,
+  type RoomSettings,
   type RoomErrorMessage,
   type StateEnvelope,
 } from "@ngame/shared";
@@ -15,6 +16,7 @@ import {
   type AuthResponse,
 } from "./auth.ts";
 import { GameTable } from "./GameTable.tsx";
+import { CardView } from "./CardView.tsx";
 
 const REALTIME_URL = import.meta.env.VITE_REALTIME_URL ?? "http://localhost:2567";
 
@@ -30,6 +32,14 @@ const INITIAL_GUESS: GuessForm = {
   targetCardId: "",
   rank: null,
   color: null,
+};
+
+const INITIAL_SETTINGS: RoomSettings = {
+  preset: "classic",
+  turnSeconds: 120,
+  totalCards: 40,
+  drawRounds: 2,
+  jokerCount: 2,
 };
 
 type JoinMode = "quick" | "create-code" | "join-code";
@@ -57,6 +67,9 @@ export function App() {
   const [profileName, setProfileName] = useState("");
   const [profileUsername, setProfileUsername] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<RoomSettings>(INITIAL_SETTINGS);
+  const [clockNow, setClockNow] = useState(Date.now());
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
 
   const game = state?.game ?? null;
   const roomPlayer = state?.players.find((player) => player.id === auth?.user.id);
@@ -88,6 +101,15 @@ export function App() {
     game?.phase === "self-penalty" &&
     selectedPenaltyCardId.length > 0 &&
     state?.status === "playing";
+  const turnRemainingSeconds =
+    state?.turnDeadlineMs === null || state?.turnDeadlineMs === undefined
+      ? null
+      : Math.max(
+          0,
+          Math.ceil(
+            (state.turnDeadlineMs - (clockNow + serverClockOffsetMs)) / 1_000,
+          ),
+        );
 
   useEffect(() => {
     let active = true;
@@ -122,8 +144,24 @@ export function App() {
     setSelectedPenaltyCardId("");
   }, [game?.turn]);
 
+  useEffect(() => {
+    if (state?.settings !== undefined) {
+      setSettingsDraft(state.settings);
+    }
+  }, [state?.settings]);
+
+  useEffect(() => {
+    if (state?.turnDeadlineMs === null || state?.turnDeadlineMs === undefined) return;
+    setClockNow(Date.now());
+    const timer = window.setInterval(() => setClockNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [state?.turnDeadlineMs]);
+
   function attachRoom(joined: Room): void {
-    joined.onMessage("state", (message: StateEnvelope) => setState(message));
+    joined.onMessage("state", (message: StateEnvelope) => {
+      setServerClockOffsetMs(message.serverTimeMs - Date.now());
+      setState(message);
+    });
     joined.onMessage("error", (message: RoomErrorMessage) => {
       setError(`${message.code}: ${message.message}`);
     });
@@ -235,6 +273,10 @@ export function App() {
     } finally {
       setProfileSaving(false);
     }
+  }
+
+  function saveRoomSettings(): void {
+    room?.send("update-settings", settingsDraft);
   }
 
   if (!authReady) {
@@ -387,7 +429,8 @@ export function App() {
                 viewerId={auth.user.id}
                 viewerName={auth.user.display_name}
                 playerNames={Object.fromEntries((state?.players ?? []).map((player) => [player.id, player.displayName]))}
-                actionsEnabled={state?.status === "playing"}
+                actionsEnabled={state?.status === "playing" || state?.status === "starting"}
+                turnRemainingSeconds={turnRemainingSeconds}
                 selectedTargetCardId={guess.targetCardId}
                 selectedPenaltyCardId={selectedPenaltyCardId}
                 guessRank={guess.rank}
@@ -398,13 +441,13 @@ export function App() {
                 onConfirmGuess={sendGuess}
                 onCancelGuess={() => setGuess(INITIAL_GUESS)}
                 onSelectPenalty={setSelectedPenaltyCardId}
-                onInsert={(rackIndex) => room.send("insert", { rackIndex })}
+                onInsert={(rackIndex) => room.send(game.phase === "starter-place" ? "place-starting-joker" : "insert", { rackIndex })}
               />
 
               <section className="control-dock">
                 <div className="phase-instruction">
                   <span className="eyebrow">YOUR ACTION</span>
-                  <strong>{!isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "place" ? "Place your card face-down" : game.phase === "penalty-place" ? "Place your revealed card" : game.phase === "self-penalty" ? "Choose one of your cards to reveal" : game.phase === "guess" && game.correctGuessesThisTurn > 0 ? "Guess again or stop and place" : game.phase === "guess" ? "Make the required guess" : "Match complete"}</strong>
+                  <strong>{game.phase === "starter-place" ? (game.pendingStartingJokerPlayerIds.includes(auth.user.id) ? "Place your revealed starting Joker" : "Waiting for starting Joker placement") : !isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "place" ? "Place your card face-down" : game.phase === "penalty-place" ? "Place your revealed card" : game.phase === "self-penalty" ? "Choose one of your cards to reveal" : game.phase === "guess" && game.correctGuessesThisTurn > 0 ? "Guess again or stop and place" : game.phase === "guess" ? "Make the required guess" : "Match complete"}</strong>
                 </div>
                 <div className="turn-actions">
                   <button className="draw-button" disabled={!canDraw} onClick={() => room.send("draw")}><span>◆</span> DRAW</button>
@@ -417,11 +460,98 @@ export function App() {
                 <p className="target-readout">{guess.targetCardId ? "Finish the guess beside the selected card." : "Select a face-down opponent card to guess."}</p>
               </section>
             </>
+          ) : state?.startingSelection !== null && state?.startingSelection !== undefined ? (
+            <section className="starter-selection">
+              <span className="eyebrow">STARTING PLAYER · ROUND {state.startingSelection.round}</span>
+              <h2>{state.startingSelection.phase === "choosing" ? "Choose one face-down card" : "Cards revealed"}</h2>
+              <p>
+                {state.startingSelection.phase === "choosing"
+                  ? state.startingSelection.eligiblePlayerIds.includes(auth.user.id)
+                    ? "Pick an available card. The highest rank starts; Joker is highest."
+                    : "Only tied players are choosing again."
+                  : state.startingSelection.starterPlayerId === null
+                    ? "The highest cards tied. Tied players receive six fresh choices next."
+                    : `${state.players.find((player) => player.id === state.startingSelection?.starterPlayerId)?.displayName ?? "The winner"} will start.`}
+              </p>
+              <div className="starter-card-row">
+                {state.startingSelection.options.map((option, index) => {
+                  const selectedByMe = option.selectedByPlayerId === auth.user.id;
+                  const alreadySelected = state.startingSelection?.options.some(
+                    (candidate) => candidate.selectedByPlayerId === auth.user.id,
+                  ) ?? false;
+                  const canSelect =
+                    state.startingSelection?.phase === "choosing" &&
+                    state.startingSelection.eligiblePlayerIds.includes(auth.user.id) &&
+                    !alreadySelected &&
+                    option.selectedByPlayerId === null;
+                  return (
+                    <div className="starter-option" key={option.id}>
+                      <CardView
+                        card={option.card ?? { id: option.id, kind: "hidden", revealed: false }}
+                        revealed={option.card !== null}
+                        selected={selectedByMe}
+                        interactive={canSelect}
+                        onSelect={() => room.send("select-starting-card", { cardId: option.id })}
+                        label={`Starting choice ${index + 1}`}
+                      />
+                      <small>
+                        {option.selectedByPlayerId === null
+                          ? `CARD ${index + 1}`
+                          : state.players.find((player) => player.id === option.selectedByPlayerId)?.displayName ?? "Selected"}
+                      </small>
+                    </div>
+                  );
+                })}
+              </div>
+              {state.startingSelection.resolvedCards.length > 0 && (
+                <div className="resolved-starters">
+                  {state.startingSelection.resolvedCards.map((result) => (
+                    <span key={result.playerId}>
+                      {state.players.find((player) => player.id === result.playerId)?.displayName}: {result.card.kind === "joker" ? "JOKER" : `${result.card.rank} ${result.card.color}`}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </section>
           ) : (
             <div className="waiting-room">
               <div className="waiting-rune">◇</div>
               <h2>Seats are filling</h2>
               <p>The host may start with 3–{state?.desiredPlayers ?? desiredPlayers} ready players.</p>
+              {state !== null && (
+                <div className="settings-summary">
+                  <strong>{state.settings.preset === "classic" ? "Classic" : `Custom · ${state.settings.totalCards} cards`}</strong>
+                  <span>{state.settings.drawRounds} draw rounds · {state.settings.turnSeconds === 0 ? "No timer" : `${state.settings.turnSeconds}s turns`}</span>
+                </div>
+              )}
+              {roomPlayer?.isHost === true && state !== null && (
+                <form className="room-settings" onSubmit={(event) => {
+                  event.preventDefault();
+                  saveRoomSettings();
+                }}>
+                  <label>
+                    Rules
+                    <select value={settingsDraft.preset} onChange={(event) => setSettingsDraft({ ...settingsDraft, preset: event.target.value as RoomSettings["preset"] })}>
+                      <option value="classic">Classic (full 52 + random Jokers)</option>
+                      <option value="custom" disabled={state.lobbyMode === "public"}>Custom</option>
+                    </select>
+                  </label>
+                  <label>
+                    Turn timer
+                    <select value={settingsDraft.turnSeconds} onChange={(event) => setSettingsDraft({ ...settingsDraft, turnSeconds: Number(event.target.value) as RoomSettings["turnSeconds"] })}>
+                      <option value={0}>Off</option><option value={30}>30 sec</option><option value={60}>1 min</option><option value={90}>1.5 min</option><option value={120}>2 min</option><option value={180}>3 min</option><option value={300}>5 min</option>
+                    </select>
+                  </label>
+                  {settingsDraft.preset === "custom" && (
+                    <>
+                      <label>Total cards<input type="number" min={24} max={56} value={settingsDraft.totalCards} onChange={(event) => setSettingsDraft({ ...settingsDraft, totalCards: Number(event.target.value) })} /></label>
+                      <label>Draw rounds<input type="number" min={1} max={8} value={settingsDraft.drawRounds} onChange={(event) => setSettingsDraft({ ...settingsDraft, drawRounds: Number(event.target.value) })} /></label>
+                      <label>Jokers<select value={settingsDraft.jokerCount} onChange={(event) => setSettingsDraft({ ...settingsDraft, jokerCount: Number(event.target.value) as RoomSettings["jokerCount"] })}><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label>
+                    </>
+                  )}
+                  <button type="submit" className="secondary-button">Apply settings</button>
+                </form>
+              )}
               <div className="waiting-player-list">
                 {(state?.players ?? []).map((player) => (
                   <div key={player.id}>

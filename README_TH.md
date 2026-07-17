@@ -1,6 +1,6 @@
 # NGAME / CipherDeck
 
-NGAME คือเกมไพ่ deduction บนเบราว์เซอร์ที่ใช้เซิร์ฟเวอร์เป็นผู้ตัดสินกติกาทั้งหมด ใช้ Google sign-in เท่านั้น รองรับห้อง 3–6 คน มีทั้ง Quick Match และห้องเลข 6 หลัก ใช้ไพ่มาตรฐาน 52 ใบพร้อม Joker 2–4 ใบ มี state ส่วนตัวแยกตามผู้เล่น และรองรับ reconnect/forfeit
+NGAME คือเกมไพ่ deduction บนเบราว์เซอร์ที่ใช้เซิร์ฟเวอร์เป็นผู้ตัดสินทั้งหมด ใช้ Google sign-in พร้อม profile ที่แก้ได้ รองรับ Quick Match และห้องเลข 3–6 คน, host/ready, Classic หรือ Custom, phase เลือกคนเริ่มด้วยไพ่ 6 ใบ, timer ฝั่งเซิร์ฟเวอร์, state ส่วนตัว และ reconnect/forfeit
 
 ## ลิงก์สำคัญ
 
@@ -30,4 +30,4 @@ npm run build --workspace @ngame/client
 
 ต้องใช้ Node.js 24.18 ขึ้นไปและ Python 3.12 ขึ้นไป เป้าหมาย production คือ Ubuntu Server 24.04 LTS VM บน Proxmox รันด้วย Docker Compose และรับ traffic ผ่าน Nginx reverse proxy ภายนอก
 
-เมื่อเปิด API และ realtime server บนเครื่องแล้ว ใช้ `npm run smoke:local --workspace @ngame/server` เพื่อทดสอบ signed JWT, ความเป็นส่วนตัวของไพ่, action และห้องเลขแบบแยกด้วยผู้เล่นจำลอง 3 คน ส่วน Google callback/refresh session ตรวจใน backend tests
+เมื่อเปิด API และ realtime server บนเครื่องแล้ว ใช้ `npm run smoke:local --workspace @ngame/server` เพื่อทดสอบ signed JWT, host/ready, การเลือกคนเริ่ม, ความเป็นส่วนตัว, action และห้องเลขด้วยผู้เล่นจำลอง 3 คน ส่วน Google authentication, profile และ refresh session ตรวจใน backend tests

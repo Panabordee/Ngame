@@ -13,19 +13,20 @@ Trigger this skill for tasks involving:
 - Colyseus room state / schema for this game
 
 ## Core Rules to Implement Exactly (see GAME_DESIGN.md)
-1. Support 3–6 players with a standard 52-card deck plus a server-randomized 2–4 Cipher Jokers.
-2. Preserve at least four full draw rounds. Compute `base = min(8, floor((deckSize - 4 * playerCount) / playerCount))`; deal `base + 1` to the first player, `base - 1` to the last, and `base` to everyone else.
+1. Support 3–6 players. Classic uses 52 standard cards plus 2–4 server-randomized Cipher Jokers. A private Custom room may use 24–56 total cards, 2–4 Jokers, and 1–8 draw rounds, with every value validated server-side.
+2. Preserve the configured draw reserve (`4` in Classic). Compute `base = min(8, floor((deckSize - drawRounds * playerCount) / playerCount))`; deal `base + 1` to the selected starter, `base - 1` to the player immediately before the starter in turn order, and `base` to everyone else.
 3. Keep standard cards sorted by rank (`A, 2–10, J, Q, K`), then color (red before black). Ignore suits. Treat standard cards with the same rank and color as ordering-equivalent. Allow Jokers at any rack position and ignore them when validating the surrounding standard-card order. Validate every insertion on the server.
 4. While the draw pile contains cards, draw exactly one card and keep it pending outside the rack. Require at least one guess before placement. A correct guess permanently reveals the target and lets the player either guess again or stop; stopping requires the player to choose a server-validated rack slot, places the pending card face-down, and ends the turn.
 5. A wrong guess while holding a pending drawn card leaves the guessed target hidden, permanently reveals the pending card, then requires the player to choose a server-validated rack slot before the turn ends.
 6. When the draw pile is empty, require exactly one guess. A correct guess reveals the target and ends the turn safely. A wrong guess requires the player to choose one of their own unrevealed cards to reveal, then ends the turn.
 7. Guess a Joker by declaring `JOKER` without a color. A correct Joker guess reveals only the targeted Joker and grants another guess normally.
 8. A player loses when every card in their rack is revealed; the last remaining player wins.
-9. Start fixed-size 3–6 player rooms automatically when full. Pause on disconnect for 30 seconds; on timeout, reveal the dropped player's full rack, preserve/reveal any pending drawn card, eliminate them, advance their turn if necessary, and re-evaluate the winner.
+9. Never auto-start. The room creator is host, every connected player readies, and the host starts with 3–6 players. Select the starter from six hidden cards; tied highest ranks or multiple Jokers redraw only tied players from a fresh set. The selected cards enter racks revealed, and starting Jokers require owner-selected placement. Pause on disconnect for 30 seconds; on timeout, preserve/reveal pending state, eliminate the player, advance if needed, and re-evaluate the winner.
+10. A configured turn deadline is server-authoritative. Timeout skips an untouched draw phase, reveals and auto-inserts a pending card, or randomly reveals an own unrevealed penalty card when no draw is available.
 
 ## Checklist Before Submitting Work (use every time game logic is touched)
 - [ ] The server is the sole arbiter — never the client (anti-cheat).
-- [ ] Unit tests cover: 2–4 randomized Jokers, 3–6 player deals, four-round draw reserve, mandatory pre-placement guess, continue-or-stop after a correct guess, hidden placement after stopping, revealed placement after a wrong guess, the empty-pile forced single guess and self-penalty path, duplicate ranks, Joker placement at every slot, invalid sort order, and end-game conditions.
+- [ ] Unit tests cover: Classic and Custom decks, 2–4 Jokers, 3–6 player deals, configured draw reserve, starting-card ties, starting Joker placement at every slot, authoritative timeout paths, mandatory pre-placement guess, continue-or-stop, hidden/revealed placement, empty-pile self-penalty, duplicate ranks, invalid sort order, and end-game conditions.
 - [ ] State broadcast to each client only contains what that client is allowed to see (never send the hidden values of other players' unrevealed cards — this is the most common vulnerability in this genre of game).
 - [ ] Reconnect handling: pause actions for 30 seconds, preserve the full state on reconnect, and test the timeout-forfeit path without losing a pending drawn card.
 

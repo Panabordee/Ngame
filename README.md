@@ -1,6 +1,6 @@
 # NGAME / CipherDeck
 
-NGAME is a browser-based, server-authoritative card deduction game. The current MVP uses Google-only sign-in and supports authenticated rooms of 3–6 players, public Quick Match and six-digit code rooms, a 52-card deck plus 2–4 Jokers, private per-player state, and reconnect/forfeit handling.
+NGAME is a browser-based, server-authoritative card deduction game. The MVP uses Google-only sign-in with editable player profiles, 3–6 player Quick Match and six-digit code rooms, host/ready start, Classic or private Custom deck settings, six-card starting-player selection, authoritative turn timers, viewer-safe state, and reconnect/forfeit handling.
 
 ## Quick links
 
@@ -28,6 +28,6 @@ python -m pytest backend/tests
 npm run build --workspace @ngame/client
 ```
 
-With local API and realtime services running, execute `npm run smoke:local --workspace @ngame/server` for a three-player signed-JWT/privacy/action and isolated room-code smoke test. Backend tests cover the Google callback and refresh session.
+With local API and realtime services running, execute `npm run smoke:local --workspace @ngame/server` for a three-player signed-JWT, host/ready, starting-selection, privacy, action, and room-code smoke test. Backend tests cover Google authentication, profile updates, and refresh sessions.
 
 Node.js 24.18 or newer and Python 3.12 or newer are required. The production target is an Ubuntu Server 24.04 LTS VM on Proxmox with Docker Compose and an external Nginx reverse proxy.

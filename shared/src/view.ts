@@ -1,7 +1,7 @@
 import { RuleViolation } from "./errors.ts";
 import type { Card, CardColor, GameState, Rank, Suit } from "./types.ts";
 
-interface VisibleStandardCard {
+export interface VisibleStandardCard {
   readonly id: string;
   readonly kind: "standard";
   readonly rank: Rank;
@@ -10,19 +10,19 @@ interface VisibleStandardCard {
   readonly revealed: boolean;
 }
 
-interface VisibleJokerCard {
+export interface VisibleJokerCard {
   readonly id: string;
   readonly kind: "joker";
   readonly revealed: boolean;
 }
 
-interface HiddenCard {
+export interface HiddenCard {
   readonly id: string;
   readonly kind: "hidden";
   readonly revealed: false;
 }
 
-type ClientCard = VisibleStandardCard | VisibleJokerCard | HiddenCard;
+export type ClientCard = VisibleStandardCard | VisibleJokerCard | HiddenCard;
 
 function visibleCard(card: Card): VisibleStandardCard | VisibleJokerCard {
   return structuredClone(card) as VisibleStandardCard | VisibleJokerCard;
@@ -45,6 +45,8 @@ export interface ClientGameView {
   readonly pendingDraw: ClientCard | null;
   readonly drawnCardId: string | null;
   readonly correctGuessesThisTurn: number;
+  readonly startingCardIds: Readonly<Record<string, string>>;
+  readonly pendingStartingJokerPlayerIds: readonly string[];
   readonly winnerId: string | null;
   readonly turn: number;
 }
@@ -78,6 +80,8 @@ export function projectStateForPlayer(state: GameState, viewerId: string): Clien
           : hiddenCard(state.pendingDraw),
     drawnCardId: state.drawnCardId,
     correctGuessesThisTurn: state.correctGuessesThisTurn,
+    startingCardIds: { ...state.startingCardIds },
+    pendingStartingJokerPlayerIds: [...state.pendingStartingJokerPlayerIds],
     winnerId: state.winnerId,
     turn: state.turn,
   };

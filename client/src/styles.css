@@ -881,6 +881,7 @@ summary:focus-visible {
 .turn-orbit span,
 .turn-orbit small { color: var(--copper); font-size: 0.56rem; font-weight: 900; letter-spacing: 0.17em; text-transform: uppercase; }
 .turn-orbit strong { color: var(--cream); font-family: Georgia, serif; font-size: 2.5rem; font-weight: 400; line-height: 1; }
+.turn-orbit em { margin-top: 4px; color: #86d7b9; font-size: 0.68rem; font-style: normal; font-weight: 800; letter-spacing: 0.1em; }
 
 .own-seat {
   position: relative;
@@ -979,6 +980,53 @@ summary:focus-visible {
 .waiting-rune { color: var(--gold); font-size: 6rem; animation: orbit-pulse 2s ease-in-out infinite; }
 .waiting-room h2 { margin: 0; font-family: Georgia, serif; font-size: 2.3rem; font-weight: 500; }
 .waiting-room p { color: var(--muted); }
+.settings-summary {
+  display: flex;
+  width: min(520px, 90vw);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 13px;
+  border: 1px solid rgba(223, 186, 112, 0.25);
+  border-radius: 8px;
+  color: var(--gold);
+  background: rgba(34, 27, 16, 0.35);
+}
+.settings-summary span { color: var(--muted); font-size: 0.72rem; }
+.room-settings {
+  display: grid;
+  width: min(680px, 92vw);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  align-items: end;
+  gap: 9px;
+  margin: 12px 0;
+  padding: 13px;
+  border: 1px solid #28453a;
+  border-radius: 10px;
+  background: rgba(9, 29, 22, 0.82);
+}
+.room-settings label { display: grid; gap: 5px; color: var(--muted); font-size: 0.68rem; }
+.room-settings input,
+.room-settings select { min-width: 0; width: 100%; padding: 9px; }
+
+.starter-selection {
+  display: grid;
+  min-height: 560px;
+  place-content: center;
+  justify-items: center;
+  padding: 30px;
+  border: 1px solid rgba(223, 186, 112, 0.2);
+  border-radius: 30px;
+  background: radial-gradient(circle, rgba(23, 106, 81, 0.3), rgba(4, 12, 10, 0.94));
+}
+.starter-selection h2 { margin: 8px 0; font-family: Georgia, serif; font-size: 2.2rem; font-weight: 500; }
+.starter-selection > p { max-width: 650px; margin: 0 0 24px; color: var(--muted); text-align: center; }
+.starter-card-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
+.starter-option { display: grid; justify-items: center; gap: 9px; }
+.starter-option .playing-card { width: 92px; }
+.starter-option small { max-width: 100px; overflow: hidden; color: var(--gold); font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.resolved-starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 22px; }
+.resolved-starters span { padding: 6px 9px; border: 1px solid #315346; border-radius: 999px; color: #a8d9c7; font-size: 0.68rem; }
 .waiting-player-list {
   display: grid;
   width: min(420px, 90vw);

@@ -16,6 +16,7 @@ interface GameTableProps {
   readonly viewerName: string;
   readonly playerNames: Readonly<Record<string, string>>;
   readonly actionsEnabled: boolean;
+  readonly turnRemainingSeconds: number | null;
   readonly selectedTargetCardId: string;
   readonly selectedPenaltyCardId: string;
   readonly guessRank: Rank | "JOKER" | null;
@@ -35,6 +36,7 @@ export function GameTable({
   viewerName,
   playerNames,
   actionsEnabled,
+  turnRemainingSeconds,
   selectedTargetCardId,
   selectedPenaltyCardId,
   guessRank,
@@ -52,8 +54,20 @@ export function GameTable({
   const isViewerTurn = game.currentPlayerId === viewerId;
   const canTarget = actionsEnabled && isViewerTurn && game.phase === "guess";
   const canSelectPenalty = actionsEnabled && isViewerTurn && game.phase === "self-penalty";
+  const isStartingJokerPlacement =
+    actionsEnabled &&
+    game.phase === "starter-place" &&
+    game.pendingStartingJokerPlayerIds.includes(viewerId);
   const isPlacing =
-    isViewerTurn && (game.phase === "place" || game.phase === "penalty-place");
+    isStartingJokerPlacement ||
+    (isViewerTurn && (game.phase === "place" || game.phase === "penalty-place"));
+  const startingCardId = game.startingCardIds[viewerId];
+  const startingJoker = isStartingJokerPlacement
+    ? viewer?.rack.find((card) => card.id === startingCardId && card.kind === "joker") ?? null
+    : null;
+  const placementRack = isStartingJokerPlacement
+    ? viewer?.rack.filter((card) => card.id !== startingCardId) ?? []
+    : viewer?.rack ?? [];
   const visibleRack = viewer?.rack.flatMap((card): Card[] =>
     card.kind === "hidden" ? [] : [structuredClone(card) as Card],
   ) ?? [];
@@ -61,10 +75,13 @@ export function GameTable({
     game.pendingDraw === null || game.pendingDraw.kind === "hidden"
       ? null
       : (structuredClone(game.pendingDraw) as Card);
+  const displayedPendingCard = startingJoker ?? pendingCard;
   const validSlots = new Set(
-    isPlacing && pendingCard !== null && visibleRack.length === (viewer?.rack.length ?? 0)
-      ? validInsertionIndexes(visibleRack, pendingCard)
-      : [],
+    isStartingJokerPlacement
+      ? Array.from({ length: placementRack.length + 1 }, (_, index) => index)
+      : isPlacing && pendingCard !== null && visibleRack.length === (viewer?.rack.length ?? 0)
+        ? validInsertionIndexes(visibleRack, pendingCard)
+        : [],
   );
 
   return (
@@ -174,12 +191,13 @@ export function GameTable({
           <span>TURN</span>
           <strong>{game.turn}</strong>
           <small>{game.phase.replace("-", " ")}</small>
+          <em>{turnRemainingSeconds === null ? "UNTIMED" : `${Math.floor(turnRemainingSeconds / 60).toString().padStart(2, "0")}:${(turnRemainingSeconds % 60).toString().padStart(2, "0")}`}</em>
         </div>
 
         <div className="pending-zone">
           <span className="zone-label">DRAWN CARD</span>
-          {game.pendingDraw !== null ? (
-            <CardView card={game.pendingDraw} label="Pending drawn card" />
+          {displayedPendingCard !== null ? (
+            <CardView card={displayedPendingCard} label={isStartingJokerPlacement ? "Starting Joker" : "Pending drawn card"} />
           ) : (
             <div className="card-placeholder">—</div>
           )}
@@ -201,7 +219,7 @@ export function GameTable({
           </header>
           <div className={`rack own-rack ${isPlacing ? "is-inserting" : ""}`}>
             {isPlacing ? (
-              Array.from({ length: viewer.rack.length + 1 }, (_, rackIndex) => (
+              Array.from({ length: placementRack.length + 1 }, (_, rackIndex) => (
                 <Fragment key={`slot-${rackIndex}`}>
                   {validSlots.has(rackIndex) ? (
                     <button
@@ -216,12 +234,12 @@ export function GameTable({
                   ) : (
                     <span className="insert-slot-spacer" aria-hidden="true" />
                   )}
-                  {viewer.rack[rackIndex] !== undefined && (
+                  {placementRack[rackIndex] !== undefined && (
                     <CardView
-                      card={viewer.rack[rackIndex]}
-                      selected={selectedPenaltyCardId === viewer.rack[rackIndex]?.id}
-                      interactive={canSelectPenalty && !viewer.rack[rackIndex]?.revealed}
-                      onSelect={() => onSelectPenalty(viewer.rack[rackIndex]?.id ?? "")}
+                      card={placementRack[rackIndex]}
+                      selected={selectedPenaltyCardId === placementRack[rackIndex]?.id}
+                      interactive={canSelectPenalty && !placementRack[rackIndex]?.revealed}
+                      onSelect={() => onSelectPenalty(placementRack[rackIndex]?.id ?? "")}
                       label={`Your card ${rackIndex + 1}`}
                     />
                   )}
@@ -247,7 +265,9 @@ export function GameTable({
             <p className="seat-hint">
               {game.phase === "place"
                 ? "Choose a + slot. Your drawn card will stay face-down."
-                : "Wrong guess: choose a + slot for the revealed drawn card."}
+                : game.phase === "starter-place"
+                  ? "Your starting Joker is revealed. Choose any + slot before turn one."
+                  : "Wrong guess: choose a + slot for the revealed drawn card."}
             </p>
           )}
         </article>

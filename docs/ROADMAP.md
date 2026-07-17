@@ -2,6 +2,8 @@
 
 This document records requested future work. It does not override `GAME_DESIGN.md`; a feature becomes authoritative only after its open rule decisions are resolved and the canonical design is updated.
 
+Status (2026-07-17): items 2–9 are implemented. Protected admin/deck-art management remains future work. The canonical rules have been moved to `GAME_DESIGN.md`.
+
 ## Recommended order
 
 1. Immediate UX: Enter-to-join, opponent names, contextual guess picker, and hide the manual Sync button.
@@ -36,19 +38,19 @@ Expected data resources: `card_decks`, `card_assets`, `admin_audit_logs`, and ad
 - Full profile: editable display name, unique username, avatar, validation, reserved words, moderation, and change rate limits.
 - Realtime must receive trusted identity metadata from the access token/API, never trust a client-supplied name.
 
-The current opponent label is a shortened account UUID; it is not encrypted text.
+The previous opponent label was a shortened account UUID; it was not encrypted text. The table now uses the verified display name.
 
 ## 3. Pre-match room settings
 
 The host edits settings, the server broadcasts them, and settings lock when the match starts:
 
-- Turn timer: Off / 30 / 45 / 60 / 90 / 120 seconds.
+- Turn timer: Off / 30 / 60 / 90 / 120 / 180 / 300 seconds.
 - Player count: 3–6.
 - Initial-card/deal preset.
 - Draw-round reserve.
 - Allowed visual deck theme.
 
-Quick Match must match only compatible presets or use one standard preset. Before implementation, decide whether “card count” means initial cards per player, total deck size, or Joker count; also define timeout behavior and whether arbitrary values or approved presets are allowed.
+Quick Match uses Classic. Private rooms may use Custom with 24–56 total cards, 1–8 draw rounds, 2–4 Jokers, and validated timer choices. Timeout behavior is documented in `GAME_DESIGN.md`.
 
 ## 4. Host-controlled start
 
@@ -66,7 +68,7 @@ Quick Match must match only compatible presets or use one standard preset. Befor
 - With fewer than six players, unused cards return to the deck and the server reshuffles.
 - Count the selected card as part of the initial hand to avoid increasing hand size accidentally.
 
-Open decisions: standard-rank ties, multiple Jokers, reveal timing, and timeout/no-selection behavior.
+Equal highest ranks and multiple Jokers redraw only the tied players from a fresh six-card set. Selected cards reveal together after every eligible player chooses.
 
 ## 6. Starting Joker placement
 

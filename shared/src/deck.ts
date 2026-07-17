@@ -95,3 +95,27 @@ export function createShuffledDeck(
 ): Card[] {
   return shuffleDeck(createDeck(chooseJokerCount(random), idFactory), random);
 }
+
+export function createCustomDeck(
+  totalCards: number,
+  jokerCount: number,
+  random: RandomSource,
+  idFactory: CardIdFactory,
+): Card[] {
+  if (!Number.isInteger(totalCards) || totalCards < 24 || totalCards > 56) {
+    throw new RuleViolation("INVALID_DECK", "A custom deck must contain 24 to 56 cards.");
+  }
+  const fullDeck = createDeck(jokerCount, idFactory);
+  if (totalCards > 52 + jokerCount) {
+    throw new RuleViolation(
+      "INVALID_DECK",
+      "The requested deck is larger than the available standard cards and Jokers.",
+    );
+  }
+  const standards = shuffleDeck(
+    fullDeck.filter((card) => card.kind === "standard"),
+    random,
+  ).slice(0, totalCards - jokerCount);
+  const jokers = fullDeck.filter((card) => card.kind === "joker");
+  return shuffleDeck([...standards, ...jokers], random);
+}

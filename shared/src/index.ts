@@ -4,5 +4,6 @@ export * from "./game.ts";
 export * from "./protocol.ts";
 export * from "./rack.ts";
 export * from "./snapshot.ts";
+export * from "./setup.ts";
 export * from "./types.ts";
 export * from "./view.ts";

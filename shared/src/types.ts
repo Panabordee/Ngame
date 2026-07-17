@@ -44,6 +44,7 @@ export interface PlayerState {
 }
 
 export type TurnPhase =
+  | "starter-place"
   | "draw"
   | "guess"
   | "place"
@@ -60,6 +61,8 @@ export interface GameState {
   pendingDraw: Card | null;
   drawnCardId: string | null;
   correctGuessesThisTurn: number;
+  startingCardIds: Record<string, string>;
+  pendingStartingJokerPlayerIds: string[];
   winnerId: string | null;
   turn: number;
 }
@@ -94,3 +97,8 @@ export interface GuessResolution {
 
 export type RandomSource = () => number;
 export type CardIdFactory = (sequence: number) => string;
+
+export interface StartingCardAssignment {
+  readonly playerId: string;
+  readonly card: Card;
+}
