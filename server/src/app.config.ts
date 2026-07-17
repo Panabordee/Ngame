@@ -14,6 +14,14 @@ export function createGameServer(
   config: ServerConfig = loadServerConfig(),
   authenticator: Authenticator = createJwtAuthenticator(config),
 ) {
+  const allowedOrigins = new Set(config.corsAllowedOrigins);
+  matchMaker.controller.getCorsHeaders = (headers) => {
+    const origin = headers.get("origin");
+    return {
+      "Access-Control-Allow-Origin":
+        origin !== null && allowedOrigins.has(origin) ? origin : "",
+    };
+  };
   CipherDeckRoom.authenticator = authenticator;
   CipherDeckRoom.runtimeConfig = {
     reconnectSeconds: config.reconnectSeconds,
@@ -25,6 +33,7 @@ export function createGameServer(
     transport: new WebSocketTransport(),
     rooms: { cipher_deck: room },
     express: (app) => {
+      app.disable("x-powered-by");
       app.get("/healthz", (_request, response) => {
         response.json({ status: "ok" });
       });

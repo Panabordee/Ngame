@@ -13,6 +13,7 @@ import {
 
 import { createGameServer } from "./app.config.ts";
 import { CipherDeckRoom } from "./CipherDeckRoom.ts";
+import { loadServerConfig } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
 
 const TEST_CONFIG: ServerConfig = {
@@ -21,6 +22,7 @@ const TEST_CONFIG: ServerConfig = {
   jwtPublicKeyFile: "unused-in-room-tests.pem",
   jwtIssuer: "http://test.invalid",
   jwtAudience: "ngame-test",
+  corsAllowedOrigins: ["http://frontend.test"],
   reconnectSeconds: 1,
   maxMessagesPerSecond: 100,
 };
@@ -63,10 +65,16 @@ async function requestState(
 function waitForStateWhere(
   client: ColyseusClientRoom,
   predicate: (state: StateEnvelope) => boolean,
+  timeoutMilliseconds = 2_000,
 ): Promise<StateEnvelope> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for the expected room state."));
+    }, timeoutMilliseconds);
     const unsubscribe = client.onMessage<StateEnvelope>("state", (state) => {
       if (predicate(state)) {
+        clearTimeout(timeout);
         unsubscribe();
         resolve(state);
       }
@@ -74,7 +82,36 @@ function waitForStateWhere(
   });
 }
 
+function waitForSignal(
+  signal: { once(callback: () => void): void },
+  description: string,
+  timeoutMilliseconds = 2_000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Timed out waiting for ${description}.`));
+    }, timeoutMilliseconds);
+    signal.once(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
 test("room rejects invalid credentials and invalid lobby sizes", async () => {
+  const health = await testServer.http.get("/healthz", {
+    headers: { Origin: "http://frontend.test" },
+  });
+  assert.equal(health.headers["x-powered-by"], undefined);
+  assert.equal(health.headers["access-control-allow-origin"], "http://frontend.test");
+  const blockedCors = await testServer.http.get("/healthz", {
+    headers: { Origin: "https://attacker.example" },
+  });
+  assert.notEqual(
+    blockedCors.headers["access-control-allow-origin"],
+    "https://attacker.example",
+  );
+
   testServer.sdk.auth.token = "invalid";
   await assert.rejects(
     testServer.sdk.joinOrCreate("cipher_deck", {
@@ -91,6 +128,23 @@ test("room rejects invalid credentials and invalid lobby sizes", async () => {
       lobbyMode: "public",
     }),
     /desiredPlayers must be an integer from 3 to 6/,
+  );
+});
+
+test("server config requires exact CORS origins", () => {
+  assert.throws(
+    () => loadServerConfig({ CORS_ALLOWED_ORIGINS: "*" }),
+    /exact origin, not a wildcard/,
+  );
+  assert.throws(
+    () => loadServerConfig({ CORS_ALLOWED_ORIGINS: "https:\/\/example.com\/path" }),
+    /exact HTTP\(S\) origins/,
+  );
+  assert.deepEqual(
+    loadServerConfig({
+      CORS_ALLOWED_ORIGINS: "https://one.example, https://two.example",
+    }).corsAllowedOrigins,
+    ["https://one.example", "https://two.example"],
   );
 });
 
@@ -315,4 +369,165 @@ test("code rooms use six-digit codes and stay out of Quick Match", async () => {
     codeGuest.leave(true),
     publicRoom.leave(true),
   ]);
+});
+
+test("a player who drops before a match starts releases the waiting-room seat", async () => {
+  testServer.sdk.auth.token = "user-waiting-owner";
+  const owner = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  owner.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-waiting-guest";
+  const guest = await testServer.sdk.joinById(owner.roomId);
+  guest.onMessage("state", () => undefined);
+  assert.equal((await requestState(owner)).connectedPlayers, 2);
+
+  guest.reconnection.enabled = false;
+  const releasedState = waitForStateWhere(
+    owner,
+    (envelope) => envelope.status === "waiting" && envelope.connectedPlayers === 1,
+  );
+  void guest.leave(false);
+  await releasedState;
+
+  testServer.sdk.auth.token = "user-waiting-replacement";
+  const replacement = await testServer.sdk.joinById(owner.roomId);
+  replacement.onMessage("state", () => undefined);
+  assert.equal((await requestState(owner)).connectedPlayers, 2);
+
+  await Promise.all([owner.leave(true), replacement.leave(true)]);
+});
+
+test("a dropped player reconnects without losing a pending drawn card", async () => {
+  testServer.sdk.auth.token = "user-reconnect-1";
+  const client1 = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  client1.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-reconnect-2";
+  const client2 = await testServer.sdk.joinById(client1.roomId);
+  client2.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-reconnect-3";
+  const client3 = await testServer.sdk.joinById(client1.roomId);
+  client3.onMessage("state", () => undefined);
+
+  const drawnState = waitForStateWhere(
+    client1,
+    (envelope) => envelope.game?.pendingDraw !== null,
+  );
+  client1.send("draw");
+  const pendingCardId = ownView(await drawnState, "user-reconnect-1").pendingDraw?.id;
+  assert.notEqual(pendingCardId, undefined);
+
+  client1.reconnection.minUptime = 0;
+  const dropped = waitForSignal(
+    client1.onDrop,
+    "the client connection to drop",
+  );
+  const reconnected = waitForSignal(
+    client1.onReconnect,
+    "the client to reconnect",
+  );
+  const pausedState = waitForStateWhere(
+    client2,
+    (envelope) =>
+      envelope.status === "paused" &&
+      envelope.droppedPlayerIds.includes("user-reconnect-1"),
+  );
+  const resumedState = waitForStateWhere(
+    client2,
+    (envelope) =>
+      envelope.status === "playing" && envelope.droppedPlayerIds.length === 0,
+  );
+
+  void client1.leave(false);
+  await dropped;
+  await pausedState;
+
+  const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
+  let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
+  assert.equal(authoritative.pendingDraw?.id, pendingCardId);
+
+  await reconnected;
+  await resumedState;
+  authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
+  assert.equal(authoritative.pendingDraw?.id, pendingCardId);
+  assert.equal(authoritative.phase, "guess");
+
+  const reconnectedState = await requestState(client1);
+  assert.equal(reconnectedState.status, "playing");
+  assert.equal(ownView(reconnectedState, "user-reconnect-1").pendingDraw?.id, pendingCardId);
+
+  await Promise.all([
+    client1.leave(true),
+    client2.leave(true),
+    client3.leave(true),
+  ]);
+});
+
+test("reconnection timeout reveals and preserves a pending drawn card", async () => {
+  testServer.sdk.auth.token = "user-timeout-1";
+  const client1 = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  client1.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-timeout-2";
+  const client2 = await testServer.sdk.joinById(client1.roomId);
+  client2.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-timeout-3";
+  const client3 = await testServer.sdk.joinById(client1.roomId);
+  client3.onMessage("state", () => undefined);
+
+  const drawnState = waitForStateWhere(
+    client1,
+    (envelope) => envelope.game?.pendingDraw !== null,
+  );
+  client1.send("draw");
+  const pendingCardId = ownView(await drawnState, "user-timeout-1").pendingDraw?.id;
+  assert.notEqual(pendingCardId, undefined);
+
+  client1.reconnection.enabled = false;
+  const pausedState = waitForStateWhere(
+    client2,
+    (envelope) =>
+      envelope.status === "paused" && envelope.droppedPlayerIds.includes("user-timeout-1"),
+  );
+  const forfeitedState = waitForStateWhere(
+    client2,
+    (envelope) =>
+      envelope.game?.players.find((player) => player.id === "user-timeout-1")
+        ?.eliminated === true,
+    3_000,
+  );
+
+  void client1.leave(false);
+  await pausedState;
+
+  const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
+  let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
+  assert.equal(authoritative.pendingDraw?.id, pendingCardId);
+
+  await forfeitedState;
+  authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
+  assert.equal(authoritative.pendingDraw, null);
+  const forfeitedPlayer = authoritative.players.find(
+    (player) => player.id === "user-timeout-1",
+  );
+  assert.equal(forfeitedPlayer?.eliminated, true);
+  assert.equal(forfeitedPlayer?.rack.every((card) => card.revealed), true);
+  assert.equal(
+    forfeitedPlayer?.rack.some((card) => card.id === pendingCardId && card.revealed),
+    true,
+  );
+  assert.equal(authoritative.currentPlayerIndex, 1);
+
+  await Promise.all([client2.leave(true), client3.leave(true)]);
 });

@@ -1,43 +1,52 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import { Client, type Room } from "@colyseus/sdk";
+import { importPKCS8, SignJWT } from "jose";
 import type { StateEnvelope } from "@ngame/shared";
 
 const apiUrl = process.env.API_PUBLIC_URL ?? "http://localhost:8000";
 const realtimeUrl = process.env.REALTIME_PUBLIC_URL ?? "http://localhost:2567";
-const runId = `${Date.now()}-${process.pid}`;
+const jwtIssuer = process.env.JWT_ISSUER ?? "http://localhost:8000";
+const jwtAudience = process.env.JWT_AUDIENCE ?? "ngame";
+const jwtPrivateKeyFile =
+  process.env.JWT_PRIVATE_KEY_FILE ??
+  fileURLToPath(new URL("../../secrets/jwt-private.pem", import.meta.url));
 
-interface RegisteredUser {
+interface SmokeUser {
   readonly accessToken: string;
   readonly userId: string;
 }
 
-async function registerPlayer(index: number): Promise<RegisteredUser> {
-  const response = await fetch(`${apiUrl}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: `smoke-${runId}-${index}@example.com`,
-      password: "smoke-password-123",
-      display_name: `Smoke Player ${index}`,
-    }),
-  });
-  const responseBody = await response.text();
-  assert.equal(response.status, 201, responseBody);
-  const body = JSON.parse(responseBody) as {
-    access_token: string;
-    user: { id: string };
-  };
-  return { accessToken: body.access_token, userId: body.user.id };
+const privateKey = await importPKCS8(await readFile(jwtPrivateKeyFile, "utf8"), "RS256");
+
+async function createSmokeUser(): Promise<SmokeUser> {
+  const userId = randomUUID();
+  const accessToken = await new SignJWT({ typ: "access" })
+    .setProtectedHeader({ alg: "RS256" })
+    .setSubject(userId)
+    .setIssuer(jwtIssuer)
+    .setAudience(jwtAudience)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .setJti(randomUUID())
+    .sign(privateKey);
+  return { accessToken, userId };
 }
 
-async function joinPlayer(player: RegisteredUser): Promise<Room> {
+function authenticatedClient(player: SmokeUser): Client {
   const client = new Client(realtimeUrl);
   client.auth.token = player.accessToken;
-  const room = await client.joinOrCreate("cipher_deck", {
-    desiredPlayers: 3,
-    lobbyMode: "public",
-  });
+  return client;
+}
+
+async function joinPlayerById(
+  player: SmokeUser,
+  roomId: string,
+): Promise<Room> {
+  const room = await authenticatedClient(player).joinById(roomId);
   room.onMessage("state", () => undefined);
   return room;
 }
@@ -63,12 +72,30 @@ const healthResponses = await Promise.all([
 ]);
 assert.equal(healthResponses.every((response) => response.ok), true);
 
-const players = await Promise.all([1, 2, 3].map(registerPlayer));
+const players = await Promise.all([1, 2, 3].map(createSmokeUser));
 const rooms: Room[] = [];
-let codeRoom: Room | null = null;
 try {
-  for (const player of players) {
-    rooms.push(await joinPlayer(player));
+  const owner = players[0];
+  if (owner === undefined) throw new Error("The smoke-test owner is missing.");
+  const ownerRoom = await authenticatedClient(owner).create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  ownerRoom.onMessage("state", () => undefined);
+  rooms.push(ownerRoom);
+
+  const codeState = await requestState(ownerRoom);
+  assert.equal(codeState.lobbyMode, "code");
+  assert.match(codeState.roomCode ?? "", /^\d{6}$/);
+  const codeLookupResponse = await fetch(
+    `${realtimeUrl}/rooms/by-code/${codeState.roomCode}`,
+  );
+  assert.equal(codeLookupResponse.ok, true);
+  const codeLookup = (await codeLookupResponse.json()) as { roomId: string };
+  assert.equal(codeLookup.roomId, ownerRoom.roomId);
+
+  for (const player of players.slice(1)) {
+    rooms.push(await joinPlayerById(player, codeLookup.roomId));
   }
   assert.equal(new Set(rooms.map((room) => room.roomId)).size, 1);
 
@@ -107,23 +134,6 @@ try {
   activeRoom.send("draw");
   assert.equal((await drewState).game?.phase, "guess");
 
-  const codeClient = new Client(realtimeUrl);
-  codeClient.auth.token = players[0]?.accessToken ?? "";
-  codeRoom = await codeClient.create("cipher_deck", {
-    desiredPlayers: 3,
-    lobbyMode: "code",
-  });
-  codeRoom.onMessage("state", () => undefined);
-  const codeState = await requestState(codeRoom);
-  assert.equal(codeState.lobbyMode, "code");
-  assert.match(codeState.roomCode ?? "", /^\d{6}$/);
-  const codeLookupResponse = await fetch(
-    `${realtimeUrl}/rooms/by-code/${codeState.roomCode}`,
-  );
-  assert.equal(codeLookupResponse.ok, true);
-  const codeLookup = (await codeLookupResponse.json()) as { roomId: string };
-  assert.equal(codeLookup.roomId, codeRoom.roomId);
-
   process.stdout.write(
     `${JSON.stringify({
       status: "ok",
@@ -132,12 +142,9 @@ try {
       roomId: rooms[0]?.roomId,
       roomCode: codeState.roomCode,
       players: players.map((player) => player.userId),
-      verified: ["auth", "matchmaking", "privacy", "draw", "room-code"],
+      verified: ["signed-jwt", "isolated-room-join", "privacy", "draw", "room-code"],
     }, null, 2)}\n`,
   );
 } finally {
-  await Promise.all([
-    ...rooms.map((room) => room.leave(true)),
-    ...(codeRoom === null ? [] : [codeRoom.leave(true)]),
-  ]);
+  await Promise.all(rooms.map((room) => room.leave(true)));
 }
