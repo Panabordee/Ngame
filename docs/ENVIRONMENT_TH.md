@@ -7,8 +7,8 @@
 | ตัวแปร | ค่า Local Compose | ค่า production/หน้าที่ |
 | --- | --- | --- |
 | `FRONTEND_PUBLIC_URL` | `http://localhost:8080` | `https://ngame.ce-nacl.com` |
-| `API_PUBLIC_URL` | `http://localhost:8000` | `https://api.ngame.ce-nacl.com` |
-| `REALTIME_PUBLIC_URL` | `http://localhost:2567` | `https://realtime.ngame.ce-nacl.com` |
+| `API_PUBLIC_URL` | `http://localhost:8000` | `https://ngame-api.ce-nacl.com` |
+| `REALTIME_PUBLIC_URL` | `http://localhost:2567` | `https://ngame-realtime.ce-nacl.com` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:8080` | origin ของ frontend แบบ exact; คั่นหลายค่าด้วย comma |
 | `VITE_API_URL` | `http://localhost:8000` | API URL ตอน build Vite โดยตรง |
 | `VITE_REALTIME_URL` | `http://localhost:2567` | realtime URL ตอน build Vite โดยตรง |

@@ -33,7 +33,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name api.ngame.ce-nacl.com;
+    server_name ngame-api.ce-nacl.com;
 
     location / {
         proxy_pass http://ngame_api;
@@ -46,7 +46,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name realtime.ngame.ce-nacl.com;
+    server_name ngame-realtime.ce-nacl.com;
 
     location / {
         proxy_pass http://ngame_realtime;

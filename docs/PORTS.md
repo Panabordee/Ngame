@@ -6,8 +6,8 @@
 | --- | ---: | ---: | ---: | --- |
 | Vite frontend | `5173` | `8080` | `8080` | `ngame.ce-nacl.com` |
 | Vite preview | `4173` | — | — | — |
-| FastAPI | `8000` | `8000` | `8000` | `api.ngame.ce-nacl.com` |
-| Colyseus realtime | `2567` | `2567` | `2567` | `realtime.ngame.ce-nacl.com` |
+| FastAPI | `8000` | `8000` | `8000` | `ngame-api.ce-nacl.com` |
+| Colyseus realtime | `2567` | `2567` | `2567` | `ngame-realtime.ce-nacl.com` |
 | PostgreSQL | — | not published | `5432` | none |
 | Redis | — | not published | `6379` | none |
 | Mailpit web UI | — | `8025`, optional profile | `8025` | none |

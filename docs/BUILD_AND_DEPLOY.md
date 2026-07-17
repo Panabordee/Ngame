@@ -21,10 +21,10 @@ For production set:
 ```dotenv
 NGAME_ENV=production
 FRONTEND_PUBLIC_URL=https://ngame.ce-nacl.com
-API_PUBLIC_URL=https://api.ngame.ce-nacl.com
-REALTIME_PUBLIC_URL=https://realtime.ngame.ce-nacl.com
+API_PUBLIC_URL=https://ngame-api.ce-nacl.com
+REALTIME_PUBLIC_URL=https://ngame-realtime.ce-nacl.com
 CORS_ALLOWED_ORIGINS=https://ngame.ce-nacl.com
-GOOGLE_REDIRECT_URI=https://api.ngame.ce-nacl.com/auth/google/callback
+GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
 EMAIL_AUTH_ENABLED=false
 EMAIL_VERIFICATION_REQUIRED=true
@@ -81,7 +81,7 @@ Use `infra/nginx/ngame.conf.example`. Replace `NGAME_VM_PRIVATE_IP`, configure c
 
 If Nginx is on the same VM, keep `PUBLISH_ADDRESS=127.0.0.1`. If it is on another host, set `PUBLISH_ADDRESS` to the VM's private address and allow ports 8080, 8000, and 2567 only from the proxy IP. Never publish PostgreSQL or Redis.
 
-Point DNS for `ngame.ce-nacl.com`, `api.ngame.ce-nacl.com`, and `realtime.ngame.ce-nacl.com` to the existing proxy. A `*.ce-nacl.com` certificate does not cover `api.ngame.ce-nacl.com`; issue exact-name certificates or include `*.ngame.ce-nacl.com`.
+Point DNS for `ngame.ce-nacl.com`, `ngame-api.ce-nacl.com`, and `ngame-realtime.ce-nacl.com` to the existing proxy. All three are single-label subdomains and can be covered by the existing `*.ce-nacl.com` wildcard certificate.
 
 ## Update procedure
 

@@ -7,8 +7,8 @@ Copy `.env.example` to `.env` for Docker Compose. Never commit `.env` or `secret
 | Variable | Local Compose default | Production value/purpose |
 | --- | --- | --- |
 | `FRONTEND_PUBLIC_URL` | `http://localhost:8080` | `https://ngame.ce-nacl.com` |
-| `API_PUBLIC_URL` | `http://localhost:8000` | `https://api.ngame.ce-nacl.com` |
-| `REALTIME_PUBLIC_URL` | `http://localhost:2567` | `https://realtime.ngame.ce-nacl.com` |
+| `API_PUBLIC_URL` | `http://localhost:8000` | `https://ngame-api.ce-nacl.com` |
+| `REALTIME_PUBLIC_URL` | `http://localhost:2567` | `https://ngame-realtime.ce-nacl.com` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:8080` | exact frontend origin; comma-separated if needed |
 | `VITE_API_URL` | `http://localhost:8000` | build-time API URL for direct Vite builds |
 | `VITE_REALTIME_URL` | `http://localhost:2567` | build-time realtime URL for direct Vite builds |

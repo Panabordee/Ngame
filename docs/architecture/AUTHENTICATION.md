@@ -19,7 +19,7 @@ FastAPI is the only authentication authority. It owns users, credentials, extern
 
 1. The browser signs in through FastAPI.
 2. FastAPI returns a short-lived access JWT in the response body.
-3. FastAPI sets an opaque refresh token in a `Secure`, `HttpOnly`, `SameSite=Lax` host-only cookie on `api.ngame.ce-nacl.com`.
+3. FastAPI sets an opaque refresh token in a `Secure`, `HttpOnly`, `SameSite=Lax` host-only cookie on `ngame-api.ce-nacl.com`.
 4. The browser keeps the access JWT in memory, not local storage.
 5. The browser assigns the access JWT to the Colyseus client before matchmaking.
 6. Colyseus verifies the signature, issuer, audience, expiry, and token type before accepting the room join.
@@ -38,7 +38,7 @@ Authorized JavaScript origin:
 https://ngame.ce-nacl.com
 
 Authorized redirect URI:
-https://api.ngame.ce-nacl.com/auth/google/callback
+https://ngame-api.ce-nacl.com/auth/google/callback
 ```
 
 Identify a Google login by the stable provider subject (`sub`), never by display name. Do not silently attach a Google identity to an existing password account merely because email strings match. Require authenticated account linking when an existing identity would be affected.

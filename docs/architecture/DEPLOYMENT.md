@@ -15,15 +15,15 @@ Use a VM rather than a nested Docker LXC so kernel, networking, and storage beha
 | Hostname | Upstream service | Default VM port |
 | --- | --- | ---: |
 | `ngame.ce-nacl.com` | React frontend | `8080` |
-| `api.ngame.ce-nacl.com` | FastAPI | `8000` |
-| `realtime.ngame.ce-nacl.com` | Colyseus WebSocket server | `2567` |
+| `ngame-api.ce-nacl.com` | FastAPI | `8000` |
+| `ngame-realtime.ce-nacl.com` | Colyseus WebSocket server | `2567` |
 
-Create individual DNS records for `ngame`, `api.ngame`, and `realtime.ngame`, or create `ngame` plus a wildcard record for `*.ngame`. A certificate for `*.ce-nacl.com` does not cover two-label hosts such as `api.ngame.ce-nacl.com`; issue certificates for the exact names or for `*.ngame.ce-nacl.com` plus `ngame.ce-nacl.com`.
+Create individual DNS records for `ngame`, `ngame-api`, and `ngame-realtime`, or use an appropriate wildcard DNS record. These are all single-label subdomains of `ce-nacl.com`, so a `*.ce-nacl.com` wildcard certificate covers all three.
 
 Google's production OAuth redirect will be:
 
 ```text
-https://api.ngame.ce-nacl.com/auth/google/callback
+https://ngame-api.ce-nacl.com/auth/google/callback
 ```
 
 ## Containers

@@ -15,15 +15,15 @@
 | Hostname | Upstream service | พอร์ต VM เริ่มต้น |
 | --- | --- | ---: |
 | `ngame.ce-nacl.com` | React frontend | `8080` |
-| `api.ngame.ce-nacl.com` | FastAPI | `8000` |
-| `realtime.ngame.ce-nacl.com` | Colyseus WebSocket | `2567` |
+| `ngame-api.ce-nacl.com` | FastAPI | `8000` |
+| `ngame-realtime.ce-nacl.com` | Colyseus WebSocket | `2567` |
 
-สร้าง DNS record แยกสำหรับ `ngame`, `api.ngame` และ `realtime.ngame` หรือใช้ `ngame` พร้อม wildcard `*.ngame` Certificate `*.ce-nacl.com` ไม่ครอบคลุม hostname สองระดับอย่าง `api.ngame.ce-nacl.com` ต้องออก certificate ที่มีชื่อเหล่านี้โดยตรงหรือใช้ `*.ngame.ce-nacl.com` ร่วมกับ `ngame.ce-nacl.com`
+สร้าง DNS record แยกสำหรับ `ngame`, `ngame-api` และ `ngame-realtime` หรือใช้ wildcard DNS record ที่เหมาะสม ทั้งสามชื่อเป็น subdomain ชั้นเดียวของ `ce-nacl.com` จึงใช้ wildcard certificate `*.ce-nacl.com` ครอบคลุมได้ทั้งหมด
 
 Google OAuth redirect สำหรับ production คือ:
 
 ```text
-https://api.ngame.ce-nacl.com/auth/google/callback
+https://ngame-api.ce-nacl.com/auth/google/callback
 ```
 
 ## Container
