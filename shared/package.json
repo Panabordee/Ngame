@@ -1,0 +1,11 @@
+{
+  "name": "@ngame/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "test": "node src/engine.test.ts",
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}
