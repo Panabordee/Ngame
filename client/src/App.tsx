@@ -64,6 +64,7 @@ export function App() {
   const [guess, setGuess] = useState<GuessForm>(INITIAL_GUESS);
   const [selectedPenaltyCardId, setSelectedPenaltyCardId] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [profileUsername, setProfileUsername] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -156,6 +157,15 @@ export function App() {
     const timer = window.setInterval(() => setClockNow(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [state?.turnDeadlineMs]);
+
+  useEffect(() => {
+    if (!rulesOpen) return;
+    function closeRulesOnEscape(event: KeyboardEvent): void {
+      if (event.key === "Escape") setRulesOpen(false);
+    }
+    window.addEventListener("keydown", closeRulesOnEscape);
+    return () => window.removeEventListener("keydown", closeRulesOnEscape);
+  }, [rulesOpen]);
 
   function attachRoom(joined: Room): void {
     joined.onMessage("state", (message: StateEnvelope) => {
@@ -252,6 +262,7 @@ export function App() {
 
   function openProfile(): void {
     if (auth === null) return;
+    setRulesOpen(false);
     setProfileName(auth.user.display_name);
     setProfileUsername(auth.user.username ?? "");
     setProfileOpen(true);
@@ -322,13 +333,118 @@ export function App() {
           {connectionStatus}
           {state !== null && <span className={`match-status match-${state.status}`}>{state.status}</span>}
         </div>
+        <div className="topbar-account">
+          <button
+            type="button"
+            className="help-icon-button"
+            aria-label="เปิดวิธีการเล่น"
+            title="วิธีการเล่น"
+            onClick={() => {
+              setProfileOpen(false);
+              setRulesOpen(true);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9.8 9a2.35 2.35 0 0 1 4.48 1c0 1.78-2.28 2.02-2.28 3.55" />
+              <path d="M12 17.2h.01" />
+            </svg>
+          </button>
           <div className="profile-chip">
             <span>{auth.user.display_name.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{auth.user.display_name}</strong><small>{auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small></div>
-          <button type="button" onClick={openProfile}>Profile</button>
-          <button type="button" onClick={() => void signOut()}>Sign out</button>
+            <div>
+              <strong>{auth.user.display_name}</strong>
+              <small>{auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small>
+            </div>
+            <button type="button" onClick={openProfile}>Profile</button>
+            <button type="button" onClick={() => void signOut()}>Sign out</button>
+          </div>
         </div>
       </header>
+
+      {rulesOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setRulesOpen(false)}>
+          <section
+            className="rules-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rules-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="rules-modal-header">
+              <div>
+                <span className="eyebrow">HOW TO PLAY</span>
+                <h2 id="rules-title">วิธีเล่น CipherDeck</h2>
+              </div>
+              <button
+                type="button"
+                className="modal-close-button"
+                aria-label="ปิดวิธีการเล่น"
+                onClick={() => setRulesOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="rules-flow" aria-label="ลำดับการเล่นในหนึ่งเทิร์น">
+              <span>จั่วไพ่</span>
+              <b>→</b>
+              <span>เดาไพ่</span>
+              <b>→</b>
+              <span>เดาต่อหรือวาง</span>
+            </div>
+
+            <div className="rules-grid">
+              <article className="rule-step">
+                <span className="rule-number">01</span>
+                <div>
+                  <h3>เตรียมห้อง</h3>
+                  <p>ทุกคนกด Ready แล้ว Host จึงกด Start เพื่อเริ่มเกม การตั้งค่าห้องกำหนดเวลา จำนวนไพ่ และจำนวนรอบที่จั่วได้</p>
+                </div>
+              </article>
+              <article className="rule-step">
+                <span className="rule-number">02</span>
+                <div>
+                  <h3>หาคนเริ่ม</h3>
+                  <p>เลือกไพ่ลับคนละ 1 ใบจาก 6 ใบ ผู้ที่ได้ไพ่สูงสุดหรือ Joker เริ่มก่อน ถ้าเสมอจะสุ่มใหม่ ไพ่ที่เลือกจะวางหงายบนแผงของผู้เล่น</p>
+                </div>
+              </article>
+              <article className="rule-step">
+                <span className="rule-number">03</span>
+                <div>
+                  <h3>จั่วแล้วต้องเดา</h3>
+                  <p>เมื่อเริ่มเทิร์นให้จั่วไพ่ จากนั้นเลือกไพ่คว่ำของคู่ต่อสู้ เลือกเลขก่อน แล้วเลือกสีแดง ดำ หรือ Joker เพื่อส่งคำตอบ</p>
+                </div>
+              </article>
+              <article className="rule-step">
+                <span className="rule-number">04</span>
+                <div>
+                  <h3>เมื่อเดาถูก</h3>
+                  <p>ไพ่เป้าหมายจะถูกเปิด คุณเลือกเดาต่อเพื่อทำแต้มต่อเนื่อง หรือกดจบแล้ววางไพ่ที่จั่วมาแบบคว่ำในตำแหน่งที่ถูกต้อง</p>
+                </div>
+              </article>
+              <article className="rule-step">
+                <span className="rule-number">05</span>
+                <div>
+                  <h3>เมื่อเดาผิด</h3>
+                  <p>ไพ่ที่จั่วมาจะถูกเปิด และคุณต้องเลือกช่องวางที่ถูกต้อง หากกองจั่วหมดแล้ว ให้เลือกเปิดไพ่คว่ำของตัวเอง 1 ใบแทน</p>
+                </div>
+              </article>
+              <article className="rule-step">
+                <span className="rule-number">06</span>
+                <div>
+                  <h3>การเรียงและชนะ</h3>
+                  <p>เรียงจาก A ถึง K โดยสีแดงมาก่อนสีดำเมื่อเลขเท่ากัน ไม่แยกดอก ส่วน Joker วางช่องใดก็ได้ ผู้เล่นคนสุดท้ายที่ยังมีไพ่คว่ำเป็นผู้ชนะ</p>
+                </div>
+              </article>
+            </div>
+
+            <p className="rules-note">
+              <strong>เวลา:</strong> นาฬิกาด้านบนจะแสดงเวลาที่เหลือของเทิร์น คิดให้ไวและส่งคำตอบก่อนหมดเวลา
+            </p>
+          </section>
+        </div>
+      )}
 
       {profileOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setProfileOpen(false)}>
