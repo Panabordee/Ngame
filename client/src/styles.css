@@ -979,6 +979,24 @@ summary:focus-visible {
 .waiting-rune { color: var(--gold); font-size: 6rem; animation: orbit-pulse 2s ease-in-out infinite; }
 .waiting-room h2 { margin: 0; font-family: Georgia, serif; font-size: 2.3rem; font-weight: 500; }
 .waiting-room p { color: var(--muted); }
+.waiting-player-list {
+  display: grid;
+  width: min(420px, 90vw);
+  gap: 7px;
+  margin: 14px 0;
+}
+.waiting-player-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid #274238;
+  border-radius: 8px;
+  background: rgba(12, 35, 27, 0.78);
+}
+.waiting-player-list small { color: var(--gold); font-size: 0.62rem; letter-spacing: 0.1em; }
+.waiting-actions { display: flex; gap: 10px; }
+.ready-active { border-color: #48b893; color: #9be0c8; }
 
 @media (max-width: 1180px) {
   .control-dock { grid-template-columns: 1fr auto; }

@@ -8,6 +8,8 @@ export interface RoomPlayer {
   readonly id: string;
   readonly displayName: string;
   readonly connected: boolean;
+  readonly isHost: boolean;
+  readonly ready: boolean;
 }
 
 export interface StateEnvelope {
@@ -15,6 +17,7 @@ export interface StateEnvelope {
   readonly desiredPlayers: number;
   readonly lobbyMode: LobbyMode;
   readonly roomCode: string | null;
+  readonly hostPlayerId: string | null;
   readonly connectedPlayers: number;
   readonly players: readonly RoomPlayer[];
   readonly droppedPlayerIds: readonly string[];

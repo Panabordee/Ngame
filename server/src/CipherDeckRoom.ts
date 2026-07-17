@@ -85,8 +85,10 @@ export class CipherDeckRoom extends Room<{
   private desiredPlayers = 0;
   private lobbyMode: LobbyMode = "public";
   private roomCode: string | null = null;
+  private hostPlayerId: string | null = null;
   private game: GameState | null = null;
   private readonly droppedPlayerIds = new Set<string>();
+  private readonly readyPlayerIds = new Set<string>();
 
   static async onAuth(
     token: string,
@@ -124,6 +126,16 @@ export class CipherDeckRoom extends Room<{
     });
     this.onMessage("sync", (client) => {
       this.sendState(client);
+    });
+    this.onMessage("ready", (client, payload: unknown) => {
+      if (typeof payload !== "boolean") {
+        this.sendError(client, "INVALID_MESSAGE", "Ready state must be a boolean.");
+        return;
+      }
+      this.setPlayerReady(client, payload);
+    });
+    this.onMessage("start-game", (client) => {
+      void this.requestStartGame(client);
     });
     this.onMessage("insert", (client, payload: unknown) => {
       const message = parseInsertMessage(payload);
@@ -177,12 +189,11 @@ export class CipherDeckRoom extends Room<{
       client.leave(4003);
       return;
     }
-
-    if (this.clients.length === this.desiredPlayers) {
-      await this.startGame();
-    } else {
-      this.broadcastState();
+    if (this.hostPlayerId === null) {
+      this.hostPlayerId = userId;
     }
+    await this.updateStatus();
+    this.broadcastState();
   }
 
   async onDrop(client: CipherClient): Promise<void> {
@@ -216,6 +227,15 @@ export class CipherDeckRoom extends Room<{
 
   async onLeave(client: CipherClient): Promise<void> {
     if (this.game === null || this.game.phase === "game-over") {
+      const userId = this.userId(client);
+      this.readyPlayerIds.delete(userId);
+      if (this.hostPlayerId === userId) {
+        const nextHost = this.clients.find(
+          (connected) => this.userId(connected) !== userId,
+        );
+        this.hostPlayerId = nextHost === undefined ? null : this.userId(nextHost);
+      }
+      await this.updateStatus();
       this.broadcastState();
       return;
     }
@@ -252,6 +272,40 @@ export class CipherDeckRoom extends Room<{
     await this.lock();
     await this.updateStatus();
     this.broadcastState();
+  }
+
+  private setPlayerReady(client: CipherClient, ready: boolean): void {
+    if (this.game !== null) {
+      this.sendError(client, "MATCH_ALREADY_STARTED", "Ready state is locked after the match starts.");
+      return;
+    }
+    const userId = this.userId(client);
+    if (ready) {
+      this.readyPlayerIds.add(userId);
+    } else {
+      this.readyPlayerIds.delete(userId);
+    }
+    this.broadcastState();
+  }
+
+  private async requestStartGame(client: CipherClient): Promise<void> {
+    if (this.game !== null) {
+      this.sendError(client, "MATCH_ALREADY_STARTED", "The match has already started.");
+      return;
+    }
+    if (this.userId(client) !== this.hostPlayerId) {
+      this.sendError(client, "HOST_ONLY", "Only the room host may start the match.");
+      return;
+    }
+    if (this.clients.length < 3) {
+      this.sendError(client, "NOT_ENOUGH_PLAYERS", "At least three players are required.");
+      return;
+    }
+    if (this.clients.some((connected) => !this.readyPlayerIds.has(this.userId(connected)))) {
+      this.sendError(client, "PLAYERS_NOT_READY", "Every connected player must be ready.");
+      return;
+    }
+    await this.startGame();
   }
 
   private applyAction(
@@ -292,11 +346,14 @@ export class CipherDeckRoom extends Room<{
       desiredPlayers: this.desiredPlayers,
       lobbyMode: this.lobbyMode,
       roomCode: this.roomCode,
+      hostPlayerId: this.hostPlayerId,
       connectedPlayers: this.clients.length,
       players: this.clients.map((connected) => ({
         id: this.userId(connected),
         displayName: this.displayName(connected),
         connected: !this.droppedPlayerIds.has(this.userId(connected)),
+        isHost: this.userId(connected) === this.hostPlayerId,
+        ready: this.readyPlayerIds.has(this.userId(connected)),
       })),
       droppedPlayerIds: [...this.droppedPlayerIds],
       game: this.game === null ? null : projectStateForPlayer(this.game, userId),

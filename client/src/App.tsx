@@ -59,7 +59,12 @@ export function App() {
   const [profileSaving, setProfileSaving] = useState(false);
 
   const game = state?.game ?? null;
+  const roomPlayer = state?.players.find((player) => player.id === auth?.user.id);
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
+  const canHostStart =
+    roomPlayer?.isHost === true &&
+    (state?.connectedPlayers ?? 0) >= 3 &&
+    state?.players.every((player) => player.ready) === true;
   const canDraw = room !== null && isMyTurn && game?.phase === "draw" && state?.status === "playing";
   const canGuess =
     room !== null &&
@@ -416,7 +421,27 @@ export function App() {
             <div className="waiting-room">
               <div className="waiting-rune">◇</div>
               <h2>Seats are filling</h2>
-              <p>The room starts at {state?.desiredPlayers ?? desiredPlayers} players.</p>
+              <p>The host may start with 3–{state?.desiredPlayers ?? desiredPlayers} ready players.</p>
+              <div className="waiting-player-list">
+                {(state?.players ?? []).map((player) => (
+                  <div key={player.id}>
+                    <span>{player.displayName}</span>
+                    <small>{player.isHost ? "HOST" : player.ready ? "READY" : "NOT READY"}</small>
+                  </div>
+                ))}
+              </div>
+              <div className="waiting-actions">
+                <button
+                  type="button"
+                  className={roomPlayer?.ready ? "secondary-button ready-active" : "secondary-button"}
+                  onClick={() => room.send("ready", !(roomPlayer?.ready ?? false))}
+                >
+                  {roomPlayer?.ready ? "Cancel ready" : "I'm ready"}
+                </button>
+                {roomPlayer?.isHost === true && (
+                  <button type="button" className="primary-button" disabled={!canHostStart} onClick={() => room.send("start-game")}>Start game</button>
+                )}
+              </div>
             </div>
           )}
         </div>

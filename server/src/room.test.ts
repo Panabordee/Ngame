@@ -98,6 +98,25 @@ function waitForSignal(
   });
 }
 
+async function readyAndStart(
+  host: ColyseusClientRoom,
+  clients: readonly ColyseusClientRoom[],
+): Promise<StateEnvelope> {
+  const allReady = waitForStateWhere(
+    host,
+    (state) =>
+      state.players.length === clients.length &&
+      state.players.every((player) => player.ready),
+  );
+  for (const client of clients) {
+    client.send("ready", true);
+  }
+  await allReady;
+  const started = waitForStateWhere(host, (state) => state.status === "playing");
+  host.send("start-game");
+  return started;
+}
+
 test("room rejects invalid credentials and invalid lobby sizes", async () => {
   const health = await testServer.http.get("/healthz", {
     headers: { Origin: "http://frontend.test" },
@@ -168,6 +187,17 @@ test("three authenticated clients can play without leaking hidden cards", async 
     lobbyMode: "public",
   });
   client3.onMessage("state", () => undefined);
+  const waiting = await requestState(client1);
+  assert.equal(waiting.status, "waiting");
+  assert.equal(waiting.hostPlayerId, "user-1");
+  assert.equal(waiting.players.find((player) => player.id === "user-1")?.isHost, true);
+
+  const hostOnlyError = client2.waitForMessage("error") as Promise<{
+    code: string;
+  }>;
+  client2.send("start-game");
+  assert.equal((await hostOnlyError).code, "HOST_ONLY");
+  await readyAndStart(client1, [client1, client2, client3]);
   const [envelope1, envelope2] = await Promise.all([
     requestState(client1),
     requestState(client2),
@@ -419,6 +449,7 @@ test("a dropped player reconnects without losing a pending drawn card", async ()
   testServer.sdk.auth.token = "user-reconnect-3";
   const client3 = await testServer.sdk.joinById(client1.roomId);
   client3.onMessage("state", () => undefined);
+  await readyAndStart(client1, [client1, client2, client3]);
 
   const drawnState = waitForStateWhere(
     client1,
@@ -489,6 +520,7 @@ test("reconnection timeout reveals and preserves a pending drawn card", async ()
   testServer.sdk.auth.token = "user-timeout-3";
   const client3 = await testServer.sdk.joinById(client1.roomId);
   client3.onMessage("state", () => undefined);
+  await readyAndStart(client1, [client1, client2, client3]);
 
   const drawnState = waitForStateWhere(
     client1,
