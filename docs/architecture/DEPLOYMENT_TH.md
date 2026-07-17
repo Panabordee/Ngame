@@ -35,7 +35,6 @@ https://ngame-api.ce-nacl.com/auth/google/callback
 | `realtime` | Matchmaking และ authoritative CipherDeck room | ผ่าน Nginx เท่านั้น |
 | `postgres` | Persistent relational data | ห้ามเปิดสาธารณะ |
 | `redis` | เตรียมไว้สำหรับ rate limit, coordination และ room snapshot | ห้ามเปิดสาธารณะ |
-| `mailpit` | รับอีเมล development | Development เท่านั้น |
 
 FastAPI ดูแล persistent application data ส่วน Colyseus ดูแล live match state ระยะ match-history จะเพิ่ม internal result endpoint ที่ยืนยันตัวตนแล้ว ปัจจุบัน endpoint นี้ยังไม่อยู่ใน MVP ทั้ง frontend และ Colyseus ห้ามเขียน PostgreSQL โดยตรง
 

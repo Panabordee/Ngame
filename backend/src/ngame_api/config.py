@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
-    email_auth_enabled: bool = True
-    email_verification_required: bool = False
-
     @cached_property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
@@ -52,15 +49,23 @@ class Settings(BaseSettings):
     def validate_security_settings(self) -> "Settings":
         if "*" in self.allowed_origins:
             raise ValueError("credentialed CORS cannot use a wildcard origin")
-        if self.google_auth_enabled and (
-            not self.google_client_id or not self.google_client_secret
-        ):
-            raise ValueError("Google auth requires a client ID and client secret")
+        if self.google_auth_enabled:
+            if (
+                not self.google_client_id
+                or not self.google_client_secret
+                or self.google_client_id.startswith("replace-")
+                or self.google_client_secret.startswith("replace-")
+            ):
+                raise ValueError("Google auth requires a real client ID and client secret")
+            if self.oauth_state_secret.startswith("replace-") or len(
+                self.oauth_state_secret
+            ) < 32:
+                raise ValueError("Google auth requires a unique OAuth state secret")
         if self.is_production:
             if not self.cookie_secure:
                 raise ValueError("production cookies must be secure")
             if self.oauth_state_secret.startswith("replace-"):
                 raise ValueError("production requires a unique OAuth state secret")
-            if self.email_auth_enabled and not self.email_verification_required:
-                raise ValueError("production email auth requires email verification")
+            if not self.google_auth_enabled:
+                raise ValueError("production requires Google authentication")
         return self

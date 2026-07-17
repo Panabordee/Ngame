@@ -10,9 +10,6 @@
 | Colyseus realtime | `2567` | `2567` | `2567` | `ngame-realtime.ce-nacl.com` |
 | PostgreSQL | — | not published | `5432` | none |
 | Redis | — | not published | `6379` | none |
-| Mailpit web UI | — | `8025`, optional profile | `8025` | none |
-| Mailpit SMTP | — | not published | `1025` | none |
-
 `PUBLISH_ADDRESS` controls the bind address for ports 8080, 8000, and 2567. Use `127.0.0.1` if Nginx runs on the same VM. If the external Nginx host is another machine, bind to the NGAME VM's private address and firewall those ports so only the proxy host can reach them.
 
-Only ports 80 and 443 should be exposed publicly on the reverse proxy. PostgreSQL, Redis, and Mailpit must never be exposed to the internet.
+Only ports 80 and 443 should be exposed publicly on the reverse proxy. PostgreSQL and Redis must never be exposed to the internet.

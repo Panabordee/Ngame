@@ -8,27 +8,12 @@ from uuid import UUID, uuid4
 
 import jwt
 from jwt import InvalidTokenError
-from pwdlib import PasswordHash
 
 from .config import Settings
 
 
-password_hash = PasswordHash.recommended()
-_DUMMY_PASSWORD_HASH = password_hash.hash("not-a-real-ngame-password")
-
-
 def normalize_email(email: str) -> str:
     return email.strip().casefold()
-
-
-def hash_password(password: str) -> str:
-    return password_hash.hash(password)
-
-
-def verify_password(password: str, encoded: str | None) -> bool:
-    candidate = encoded if encoded is not None else _DUMMY_PASSWORD_HASH
-    valid = password_hash.verify(password, candidate)
-    return valid and encoded is not None
 
 
 def create_refresh_token() -> str:

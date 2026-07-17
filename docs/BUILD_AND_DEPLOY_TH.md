@@ -1,10 +1,24 @@
-# การ Build, Docker Compose และ Deploy
+# Ubuntu 24.04 + Docker
 
-## เตรียม Ubuntu 24.04 LTS
+## 1. ติดตั้ง runtime
 
-สร้าง Ubuntu Server 24.04 LTS VM บน Proxmox และกำหนด private address ให้คงที่ ค่าเริ่มต้นที่เหมาะสมคือ 4 vCPU, RAM 8 GB และ disk 50 GB แล้วปรับตามการวัดจริง ติดตั้ง Docker Engine, Buildx และ Docker Compose plugin จาก repository ทางการของ Docker สำหรับ Ubuntu
+```bash
+sudo apt update
+sudo apt install -y git docker.io docker-compose-v2 openssl
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
 
-## เตรียม configuration และ secret
+## 2. ตั้ง Google OAuth
+
+สร้าง OAuth client ชนิด **Web application** ใน Google แล้วเพิ่ม:
+
+- Local origin: `http://localhost:8080`
+- Local callback: `http://localhost:8000/auth/google/callback`
+- Production origin: `https://ngame.ce-nacl.com`
+- Production callback: `https://ngame-api.ce-nacl.com/auth/google/callback`
+
+## 3. ตั้งค่า NGAME
 
 ```bash
 cp .env.example .env
@@ -12,11 +26,12 @@ mkdir -p secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out secrets/jwt-private.pem
 openssl pkey -in secrets/jwt-private.pem -pubout -out secrets/jwt-public.pem
 chmod 600 secrets/jwt-private.pem
+openssl rand -hex 32
 ```
 
-เปลี่ยน password และ token placeholder ทุกค่า สำหรับ Compose บนเครื่องให้ใช้ URL localhost, `COOKIE_SECURE=false` และค่า email auth สำหรับ development
+ใส่ Google client ID/secret และค่าสุ่มที่ได้ลง `.env` ถ้ารัน Docker ในเครื่องให้คง URL แบบ localhost, `NGAME_ENV=development` และ `COOKIE_SECURE=false`
 
-สำหรับ production ให้ตั้งค่า:
+Production ใช้ค่าหลักดังนี้:
 
 ```dotenv
 NGAME_ENV=production
@@ -24,79 +39,40 @@ FRONTEND_PUBLIC_URL=https://ngame.ce-nacl.com
 API_PUBLIC_URL=https://ngame-api.ce-nacl.com
 REALTIME_PUBLIC_URL=https://ngame-realtime.ce-nacl.com
 CORS_ALLOWED_ORIGINS=https://ngame.ce-nacl.com
+JWT_ISSUER=https://ngame-api.ce-nacl.com
+GOOGLE_AUTH_ENABLED=true
 GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
-EMAIL_AUTH_ENABLED=false
-EMAIL_VERIFICATION_REQUIRED=true
 ```
 
-ตั้ง `GOOGLE_AUTH_ENABLED=true` หลังใส่ client ID/secret จริงและลงทะเบียน origin/callback ใน Google แล้วเท่านั้น ให้คง `EMAIL_VERIFICATION_REQUIRED=true` แม้ปิด email auth เพื่อป้องกันการเปิดรับสมัครแบบไม่ยืนยันอีเมลโดยไม่ตั้งใจ
+ถ้า Nginx อยู่คนละเครื่อง ให้ตั้ง `PUBLISH_ADDRESS` เป็น private IP ของ NGAME VM และ `FORWARDED_ALLOW_IPS` เป็น private IP ของ proxy พร้อมเปิดพอร์ต 8080, 8000 และ 2567 ให้เฉพาะ proxy เท่านั้น
 
-## ตรวจ source ก่อน build
-
-```bash
-npm ci
-npm run typecheck
-npm test
-npm run build --workspace @ngame/client
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e 'backend[dev]'
-python -m pytest backend/tests
-```
-
-## Build และรัน Compose
+## 4. Build และรัน
 
 ```bash
 docker compose config
-docker compose build --pull
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100 api realtime frontend
 ```
 
-API จะรัน `alembic upgrade head` ก่อนเปิด Uvicorn หากต้องการรัน migration เอง:
+เปิด `http://localhost:8080` และตรวจ health:
 
 ```bash
-docker compose run --rm api alembic upgrade head
+curl -f http://localhost:8000/healthz
+curl -f http://localhost:2567/healthz
 ```
 
-URL ของ Compose บนเครื่อง:
+API รัน `alembic upgrade head` ทุกครั้งก่อนเริ่ม Migration `20260717_0002` จะลบบัญชี password เก่าและ refresh session ของบัญชีเหล่านั้นแบบถาวร
 
-- Frontend: `http://localhost:8080`
-- API health: `http://localhost:8000/healthz`
-- Realtime health: `http://localhost:2567/healthz`
+## 5. Proxy production และอัปเดต
 
-เปิด Mailpit เฉพาะ development:
-
-```bash
-docker compose --profile dev-mail up -d mailpit
-```
-
-Inbox อยู่ที่ `http://localhost:8025` หยุดระบบด้วย `docker compose down` ห้ามเพิ่ม `--volumes` เว้นแต่ตั้งใจลบข้อมูล PostgreSQL และ Redis
-
-## Nginx ภายนอกและ firewall
-
-ใช้ `infra/nginx/ngame.conf.example` เปลี่ยน `NGAME_VM_PRIVATE_IP` ตั้ง certificate ทั้งสาม hostname และคง WebSocket upgrade header สำหรับ realtime
-
-ถ้า Nginx อยู่ VM เดียวกันให้ใช้ `PUBLISH_ADDRESS=127.0.0.1` ถ้าอยู่คนละเครื่องให้ใช้ private address ของ NGAME VM และอนุญาตพอร์ต 8080, 8000 และ 2567 จาก IP ของ proxy เท่านั้น ห้าม publish PostgreSQL หรือ Redis
-
-ชี้ DNS ของ `ngame.ce-nacl.com`, `ngame-api.ce-nacl.com` และ `ngame-realtime.ce-nacl.com` ไปยัง proxy เดิม ทั้งสามชื่อเป็น subdomain ชั้นเดียวและใช้ wildcard certificate `*.ce-nacl.com` เดิมได้
-
-## ขั้นตอน update
-
-ทำงานบน feature branch ตรวจ diff แล้วจึงรัน:
+ใช้ `infra/nginx/ngame.conf.example` กับ `ngame.ce-nacl.com`, `ngame-api.ce-nacl.com` และ `ngame-realtime.ce-nacl.com` เปลี่ยน `NGAME_VM_PRIVATE_IP` และตั้ง TLS ที่ proxy เดิม
 
 ```bash
 git pull --ff-only
-docker compose build --pull
-docker compose run --rm api alembic upgrade head
-docker compose up -d --remove-orphans
+docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
-ตรวจ migration และ backup PostgreSQL ก่อนเปลี่ยน schema ห้ามแทนที่ database volume ระหว่าง update ปกติ
-
-## Backup และ restore
-
-ตั้ง schedule สำหรับ PostgreSQL logical dump ไปยัง storage นอก VM และเก็บ Proxmox VM backup แยกกัน ก่อนเปิดใช้งานจริงต้องบันทึกปลายทาง backup, encryption, retention, คำสั่ง restore และรอบทดสอบ restore การมี VM snapshot อย่างเดียวไม่เพียงพอสำหรับ database backup
+หยุดระบบโดยไม่ลบข้อมูลด้วย `docker compose down` ห้ามใช้ `docker compose down --volumes` เว้นแต่ตั้งใจลบ PostgreSQL และ Redis จริง ๆ

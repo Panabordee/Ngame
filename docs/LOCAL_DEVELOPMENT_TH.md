@@ -1,12 +1,8 @@
-# การพัฒนาบนเครื่องโดยไม่ใช้ Docker
+# Local development
 
-## สิ่งที่ต้องติดตั้ง
+## ตั้งค่าครั้งแรก
 
-- Node.js 24.18 ขึ้นไปพร้อม npm
-- Python 3.12 ขึ้นไป
-- OpenSSL
-
-รันจาก root ของ repository:
+ต้องมี Node.js 24.18+, Python 3.12+ และ OpenSSL
 
 ```bash
 npm ci
@@ -17,24 +13,19 @@ mkdir -p secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out secrets/jwt-private.pem
 openssl pkey -in secrets/jwt-private.pem -pubout -out secrets/jwt-public.pem
 chmod 600 secrets/jwt-private.pem
-```
-
-## สร้าง schema ใน SQLite
-
-```bash
-export DATABASE_URL=sqlite+aiosqlite:///../ngame.db
-export JWT_PRIVATE_KEY_FILE=../secrets/jwt-private.pem
-export JWT_PUBLIC_KEY_FILE=../secrets/jwt-public.pem
 cd backend
-alembic upgrade head
+DATABASE_URL=sqlite+aiosqlite:///../ngame.db alembic upgrade head
 cd ..
 ```
 
-## เปิด application ทั้งสาม process
+สร้าง Google OAuth client ชนิด **Web application** แล้วตั้ง:
 
-เปิด terminal สามหน้าจาก root ของ repository
+- Authorized JavaScript origin: `http://localhost:5173`
+- Redirect URI: `http://localhost:8000/auth/google/callback`
 
-Terminal 1 — FastAPI:
+## เปิดสาม terminal
+
+API:
 
 ```bash
 source .venv/bin/activate
@@ -45,21 +36,25 @@ export JWT_ISSUER=http://localhost:8000
 export FRONTEND_PUBLIC_URL=http://localhost:5173
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
 export COOKIE_SECURE=false
-export EMAIL_AUTH_ENABLED=true
-export EMAIL_VERIFICATION_REQUIRED=false
+export GOOGLE_AUTH_ENABLED=true
+export GOOGLE_CLIENT_ID='your-google-client-id'
+export GOOGLE_CLIENT_SECRET='your-google-client-secret'
+export GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+export OAUTH_STATE_SECRET='replace-with-at-least-32-random-characters'
 uvicorn ngame_api.main:app --app-dir backend/src --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2 — Colyseus:
+Realtime:
 
 ```bash
 export JWT_PUBLIC_KEY_FILE=../secrets/jwt-public.pem
 export JWT_ISSUER=http://localhost:8000
 export JWT_AUDIENCE=ngame
+export CORS_ALLOWED_ORIGINS=http://localhost:5173
 npm run start --workspace @ngame/server
 ```
 
-Terminal 3 — Vite:
+Frontend:
 
 ```bash
 export VITE_API_URL=http://localhost:8000
@@ -67,22 +62,16 @@ export VITE_REALTIME_URL=http://localhost:2567
 npm run dev --workspace @ngame/client
 ```
 
-เปิด `http://localhost:5173` สมัครสามบัญชีด้วย browser profile หรือ private session แยกกัน เลือกจำนวนผู้เล่นเท่ากันและเข้าห้อง เกมจะเริ่มเมื่อครบคน
+เปิด `http://localhost:5173` แล้ว Sign in with Google ใช้ browser profile และ Google account แยกกันเพื่อทดสอบผู้เล่น 3–6 คน
 
-## คำสั่งตรวจระบบ
+## ตรวจระบบ
 
 ```bash
 npm run typecheck
 npm test
 npm run build --workspace @ngame/client
-source .venv/bin/activate
-python -m pytest backend/tests
-```
-
-Health endpoint คือ `http://localhost:8000/healthz` และ `http://localhost:2567/healthz`
-
-เมื่อ API และ realtime ทำงานแล้ว สามารถทดสอบอัตโนมัติด้วยผู้เล่นชั่วคราว 3 คน:
-
-```bash
+.venv/bin/python -m pytest backend/tests
 npm run smoke:local --workspace @ngame/server
 ```
+
+Smoke test ใช้ JWT อายุสั้นที่ลงนามจาก key local ส่วน Google callback/session ถูกทดสอบใน backend tests

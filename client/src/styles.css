@@ -200,45 +200,12 @@ summary:focus-visible {
   font-size: 1.05rem;
 }
 
-.auth-fields {
-  display: grid;
-  gap: 14px;
-}
-
-.auth-fields label {
-  display: grid;
-  gap: 7px;
-  color: #bac5c0;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.auth-fields input,
 .guess-controls select {
   width: 100%;
   border: 1px solid #30433d;
   border-radius: 4px;
   color: var(--cream);
   background: #0a1411;
-}
-
-.auth-fields input {
-  padding: 13px 14px;
-  font-size: 0.94rem;
-  text-transform: none;
-}
-
-.auth-fields input:focus {
-  border-color: var(--emerald-light);
-}
-
-.auth-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 22px;
 }
 
 .google-button {

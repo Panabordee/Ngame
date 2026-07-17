@@ -30,24 +30,6 @@ async function authRequest(path: string, init: RequestInit): Promise<AuthRespons
   return (await response.json()) as AuthResponse;
 }
 
-export function register(
-  email: string,
-  password: string,
-  displayName: string,
-): Promise<AuthResponse> {
-  return authRequest("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password, display_name: displayName }),
-  });
-}
-
-export function login(email: string, password: string): Promise<AuthResponse> {
-  return authRequest("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
 export function refresh(): Promise<AuthResponse> {
   return authRequest("/auth/refresh", { method: "POST" });
 }

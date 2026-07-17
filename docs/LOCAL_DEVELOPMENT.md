@@ -1,12 +1,8 @@
-# Local development without Docker
+# Local development
 
-## Prerequisites
+## One-time setup
 
-- Node.js 24.18 or newer with npm
-- Python 3.12 or newer
-- OpenSSL
-
-From the repository root:
+Requirements: Node.js 24.18+, Python 3.12+, and OpenSSL.
 
 ```bash
 npm ci
@@ -17,24 +13,19 @@ mkdir -p secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out secrets/jwt-private.pem
 openssl pkey -in secrets/jwt-private.pem -pubout -out secrets/jwt-public.pem
 chmod 600 secrets/jwt-private.pem
-```
-
-## Create the local SQLite schema
-
-```bash
-export DATABASE_URL=sqlite+aiosqlite:///../ngame.db
-export JWT_PRIVATE_KEY_FILE=../secrets/jwt-private.pem
-export JWT_PUBLIC_KEY_FILE=../secrets/jwt-public.pem
 cd backend
-alembic upgrade head
+DATABASE_URL=sqlite+aiosqlite:///../ngame.db alembic upgrade head
 cd ..
 ```
 
-## Start the three application processes
+Create a Google **Web application** OAuth client with:
 
-Use three terminals from the repository root.
+- Authorized JavaScript origin: `http://localhost:5173`
+- Redirect URI: `http://localhost:8000/auth/google/callback`
 
-Terminal 1 — FastAPI:
+## Run three terminals
+
+API:
 
 ```bash
 source .venv/bin/activate
@@ -45,21 +36,25 @@ export JWT_ISSUER=http://localhost:8000
 export FRONTEND_PUBLIC_URL=http://localhost:5173
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
 export COOKIE_SECURE=false
-export EMAIL_AUTH_ENABLED=true
-export EMAIL_VERIFICATION_REQUIRED=false
+export GOOGLE_AUTH_ENABLED=true
+export GOOGLE_CLIENT_ID='your-google-client-id'
+export GOOGLE_CLIENT_SECRET='your-google-client-secret'
+export GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+export OAUTH_STATE_SECRET='replace-with-at-least-32-random-characters'
 uvicorn ngame_api.main:app --app-dir backend/src --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2 — Colyseus:
+Realtime:
 
 ```bash
 export JWT_PUBLIC_KEY_FILE=../secrets/jwt-public.pem
 export JWT_ISSUER=http://localhost:8000
 export JWT_AUDIENCE=ngame
+export CORS_ALLOWED_ORIGINS=http://localhost:5173
 npm run start --workspace @ngame/server
 ```
 
-Terminal 3 — Vite:
+Frontend:
 
 ```bash
 export VITE_API_URL=http://localhost:8000
@@ -67,22 +62,16 @@ export VITE_REALTIME_URL=http://localhost:2567
 npm run dev --workspace @ngame/client
 ```
 
-Open `http://localhost:5173`. Register three different accounts in separate browser profiles or private sessions, choose the same player count, and join. The room starts when full.
+Open `http://localhost:5173` and sign in with Google. Use separate browser profiles and Google accounts to test 3–6 players.
 
-## Verification commands
+## Verify
 
 ```bash
 npm run typecheck
 npm test
 npm run build --workspace @ngame/client
-source .venv/bin/activate
-python -m pytest backend/tests
-```
-
-Health endpoints are `http://localhost:8000/healthz` and `http://localhost:2567/healthz`.
-
-With API and realtime running, an automated smoke test creates three temporary accounts, fills a room, verifies viewer privacy, and draws the first card:
-
-```bash
+.venv/bin/python -m pytest backend/tests
 npm run smoke:local --workspace @ngame/server
 ```
+
+The smoke test uses short-lived locally signed JWTs; Google callback/session behavior is covered by the backend tests.

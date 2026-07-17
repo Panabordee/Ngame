@@ -59,9 +59,15 @@ services:
       context: .
       dockerfile: server/Dockerfile
     restart: unless-stopped
-    env_file: .env
     environment:
+      REALTIME_HOST: 0.0.0.0
+      REALTIME_PORT: 2567
       JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-ngame}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      RECONNECT_TIMEOUT_SECONDS: ${RECONNECT_TIMEOUT_SECONDS:-30}
+      MAX_ROOM_MESSAGES_PER_SECOND: ${MAX_ROOM_MESSAGES_PER_SECOND:-20}
     secrets:
       - jwt_public_key
     ports:
@@ -112,15 +118,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
-  mailpit:
-    image: axllent/mailpit:v1.27
-    profiles: ["dev-mail"]
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8025:8025"
-    networks:
-      - data
 
 secrets:
   jwt_private_key:

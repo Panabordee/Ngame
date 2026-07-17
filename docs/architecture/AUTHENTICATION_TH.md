@@ -1,76 +1,42 @@
-# สถาปัตยกรรม Authentication
+# Authentication แบบ Google เท่านั้น
 
-## วิธี Login ที่รองรับ
+FastAPI เป็นผู้ดูแล authentication ส่วน NGAME จะไม่ได้รับ password ของ Google
 
-API ปัจจุบันรองรับ:
+## Browser flow
 
-- สมัครและ sign in ด้วย email/password
-- Sign in ด้วย Google OpenID Connect
+1. Client เปิด `GET /auth/google/start`
+2. FastAPI เริ่ม Google OpenID Connect ด้วย scope `openid email profile` และ state cookie ที่ลงนาม
+3. Google ส่งกลับมาที่ `GET /auth/google/callback`
+4. FastAPI ตรวจ provider response และรับเฉพาะอีเมลที่ยืนยันแล้ว
+5. FastAPI เก็บ Google `sub`, profile และ refresh-session token แบบ hash
+6. Browser ได้ opaque refresh token ใน host-only cookie แบบ `HttpOnly`, `SameSite=Lax` และใช้ `Secure` บน production
+7. `POST /auth/refresh` หมุน cookie แล้วออก access JWT แบบ RS256 อายุสั้น
+8. Browser ส่ง access JWT ให้ Colyseus ซึ่งตรวจ issuer, audience, type, signature และ expiry
 
-การ link หลาย identity เข้าบัญชีเดียวเป็นงานในอนาคต API จะไม่รวม password และ Google identity ที่อีเมลเหมือนกันโดยอัตโนมัติ
-
-ระหว่างที่ยังไม่มี SMTP ให้ใช้ Mailpit ใน development และปิด email/password registration บน production โดย Google sign-in เหมาะกับ production ระยะแรก
-
-## ผู้รับผิดชอบ Service
-
-FastAPI เป็น authentication authority เพียงตัวเดียว ดูแล user, credential, external identity และ refresh session ส่วน verification/password-reset token ยังไม่ได้ทำ Colyseus ไม่ออก credential แต่ตรวจ access JWT อายุสั้นที่ FastAPI ออกให้เท่านั้น
-
-## Flow บน Browser
-
-1. Browser sign in ผ่าน FastAPI
-2. FastAPI ส่ง access JWT อายุสั้นใน response body
-3. FastAPI ตั้ง opaque refresh token ใน host-only cookie แบบ `Secure`, `HttpOnly`, `SameSite=Lax` บน `ngame-api.ce-nacl.com`
-4. Browser เก็บ access JWT ใน memory ไม่ใช้ local storage
-5. Browser ใส่ access JWT ให้ Colyseus client ก่อน matchmaking
-6. Colyseus ตรวจ signature, issuer, audience, expiry และ token type ก่อนรับเข้าห้อง
-7. Colyseus ใช้ claim `sub` เป็น player identity และไม่ใช้ connection/session ID แทน user ID
-
-เมื่อ refresh หน้า frontend จะขอ access JWT ใหม่ผ่าน refresh cookie Refresh token ถูก rotate ทุกครั้งและเก็บเฉพาะ hash ใน PostgreSQL
-
-## Google Sign-in
-
-ใช้ authorization-code OpenID Connect flow โดย FastAPI รับ callback ตรวจ `state`, issuer, audience, signature, expiry และ nonce และขอ scope เฉพาะ `openid email profile`
-
-ค่าที่ต้องตั้งใน Google Console สำหรับ production:
-
-```text
-Authorized JavaScript origin:
-https://ngame.ce-nacl.com
-
-Authorized redirect URI:
-https://ngame-api.ce-nacl.com/auth/google/callback
-```
-
-ระบุ Google login ด้วย provider subject (`sub`) ที่คงที่ ห้ามใช้ display name และห้ามผูกกับ password account ที่มี email เหมือนกันแบบเงียบ ๆ
-
-## API Contract ปัจจุบัน
+## Endpoint
 
 | Method | Path | หน้าที่ |
 | --- | --- | --- |
-| `POST` | `/auth/register` | สร้างบัญชี email/password |
-| `POST` | `/auth/login` | ตรวจ email/password |
-| `POST` | `/auth/refresh` | rotate refresh token และคืน access JWT |
-| `POST` | `/auth/logout` | revoke refresh session และลบ cookie |
-| `GET` | `/auth/google/start` | เริ่ม Google OIDC flow |
-| `GET` | `/auth/google/callback` | จบ Google OIDC flow |
-| `GET` | `/auth/me` | คืน profile ที่ยืนยันตัวตนแล้ว |
+| `GET` | `/auth/google/start` | เริ่ม Google OAuth |
+| `GET` | `/auth/google/callback` | ตรวจ Google และสร้าง session |
+| `POST` | `/auth/refresh` | หมุน refresh session และออก access JWT |
+| `POST` | `/auth/logout` | revoke session ปัจจุบันและล้าง cookie |
+| `GET` | `/auth/me` | อ่าน profile ที่ยืนยันตัวตนแล้ว |
 
-Endpoint ที่วางแผนไว้คือ `/auth/verify-email`, `/auth/forgot-password` และ `/auth/reset-password` ต้องปิด production email auth จนกว่า flow เหล่านี้และ SMTP พร้อม
+ไม่มี endpoint สมัครหรือล็อกอินด้วย password
 
-## Database Entity ปัจจุบัน
+## ข้อมูลที่เก็บ
 
-- `users`: user ID, display name, status และ timestamp
-- `auth_identities`: provider, provider subject และ normalized email
-- `password_credentials`: user ID และ Argon2id hash
-- `refresh_sessions`: token hash, user ID, expiry, rotation chain และ revocation metadata
+- `users`: display name และสถานะบัญชี
+- `auth_identities`: Google subject และ normalized verified email ที่ไม่ซ้ำ พร้อม provider
+- `refresh_sessions`: hash ของ opaque token, expiry, revocation, rotation link และข้อมูล client
 
-Email verification, password reset, match และ match-player record ต้องเพิ่ม migration ภายหลัง
+Migration `20260717_0002` ลบ password user เดิมพร้อม refresh session แล้ว drop ตาราง `password_credentials` การ downgrade สร้างตารางเปล่ากลับมาได้แต่กู้บัญชีที่ลบไม่ได้
 
-## Security Baseline
+## ข้อกำหนดความปลอดภัย
 
-- Hash password ด้วย Argon2id
-- ลงนาม access JWT แบบ asymmetric และ mount key เป็น Docker secret
-- Room action มี rate limit แล้ว ต้องเพิ่ม distributed rate limit ให้ register/login/refresh/reset/matchmaking ก่อนเปิดสาธารณะ
-- เปิด credentialed CORS เฉพาะ frontend origin ที่ตรงกัน
-- ใช้ `Secure` cookie ใน production และห้าม log token, password, authorization code หรือ client secret
-- เก็บ Google secret และ JWT private key นอก repository
+- ใช้ CORS origin แบบ exact ห้ามใช้ `*` ร่วมกับ credentials
+- ห้ามเก็บ Google secret, OAuth state secret, refresh token และ JWT private key ใน log หรือ Git
+- Mount JWT private key ให้ API container เท่านั้น
+- ใช้ access JWT อายุสั้นและตั้ง refresh cookie เป็น `Secure` บน production
+- เพิ่ม distributed rate limit ให้ OAuth, refresh และ matchmaking ก่อนเปิดสาธารณะ

@@ -49,8 +49,6 @@ def settings(tmp_path: Path) -> Settings:
         frontend_public_url="http://frontend.test",
         cors_allowed_origins="http://frontend.test",
         cookie_secure=False,
-        email_auth_enabled=True,
-        email_verification_required=False,
         google_auth_enabled=False,
         oauth_state_secret="test-state-secret-that-is-long-enough",
     )

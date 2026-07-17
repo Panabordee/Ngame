@@ -9,10 +9,8 @@ import {
 } from "@ngame/shared";
 
 import {
-  login,
   logout,
   refresh,
-  register,
   startGoogleLogin,
   type AuthResponse,
 } from "./auth.ts";
@@ -49,9 +47,6 @@ function errorText(error: unknown): string {
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [email, setEmail] = useState("player1@example.com");
-  const [password, setPassword] = useState("local-password-123");
-  const [displayName, setDisplayName] = useState("Player 1");
   const [desiredPlayers, setDesiredPlayers] = useState(3);
   const [roomCode, setRoomCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
@@ -87,6 +82,15 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    if (window.location.pathname === "/auth/callback") {
+      const oauthError = new URLSearchParams(window.location.search).get("error");
+      if (oauthError === "identity_conflict") {
+        setError("That email is already linked to another sign-in method.");
+      } else if (oauthError !== null) {
+        setError("Google sign-in was cancelled or could not be completed.");
+      }
+      window.history.replaceState({}, document.title, "/");
+    }
     void refresh()
       .then((session) => {
         if (active) setAuth(session);
@@ -108,19 +112,6 @@ export function App() {
     }));
     setSelectedPenaltyCardId("");
   }, [game?.turn]);
-
-  async function submitAuth(mode: "login" | "register"): Promise<void> {
-    setError(null);
-    try {
-      const session =
-        mode === "register"
-          ? await register(email, password, displayName)
-          : await login(email, password);
-      setAuth(session);
-    } catch (caught) {
-      setError(errorText(caught));
-    }
-  }
 
   function attachRoom(joined: Room): void {
     joined.onMessage("state", (message: StateEnvelope) => setState(message));
@@ -152,8 +143,10 @@ export function App() {
     setError(null);
     setConnectionStatus("connecting");
     try {
+      const currentSession = await refresh();
+      setAuth(currentSession);
       const client = new Client(REALTIME_URL);
-      client.auth.token = auth.access_token;
+      client.auth.token = currentSession.access_token;
       let joined: Room;
       if (mode === "quick") {
         joined = await client.joinOrCreate("cipher_deck", {
@@ -234,17 +227,12 @@ export function App() {
             <p>Every card tells a story. Most of them are lying.</p>
           </header>
           {error !== null && <p className="error-banner">{error}</p>}
-          <div className="auth-fields">
-            <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-            <label>Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-          </div>
-          <div className="auth-actions">
-            <button className="primary-button" onClick={() => void submitAuth("register")}>Create account</button>
-            <button className="secondary-button" onClick={() => void submitAuth("login")}>Sign in</button>
-          </div>
-          <button className="google-button" onClick={startGoogleLogin}>Continue with Google</button>
-          <small className="auth-note">Local development accepts email accounts. Production starts with Google authentication.</small>
+          <button className="google-button" onClick={startGoogleLogin}>
+            Continue with Google
+          </button>
+          <small className="auth-note">
+            NGAME uses Google only. Your password is never handled by this service.
+          </small>
         </section>
       </main>
     );

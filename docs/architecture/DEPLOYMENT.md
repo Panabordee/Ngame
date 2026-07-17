@@ -35,7 +35,6 @@ https://ngame-api.ce-nacl.com/auth/google/callback
 | `realtime` | Matchmaking and authoritative CipherDeck rooms | Through Nginx only |
 | `postgres` | Persistent relational data | Never public |
 | `redis` | Provisioned for future rate limits, coordination, and room snapshots | Never public |
-| `mailpit` | Development email capture | Development only |
 
 FastAPI owns persistent application data and Colyseus owns live match state. The planned match-history phase will add an authenticated internal FastAPI result endpoint for Colyseus. That endpoint is not part of the current MVP. Neither the frontend nor Colyseus writes directly to PostgreSQL.
 

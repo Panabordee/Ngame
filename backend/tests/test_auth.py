@@ -1,35 +1,61 @@
+from types import SimpleNamespace
+
+from authlib.integrations.base_client.errors import OAuthError
 from fastapi.testclient import TestClient
 import pytest
 
 from ngame_api.services import IdentityConflictError, authenticate_google_user
 
 
-REGISTRATION = {
-    "email": "player@example.com",
-    "password": "correct-horse-battery-staple",
-    "display_name": "Cipher Player",
+GOOGLE_USER = {
+    "sub": "google-subject-1",
+    "email": "google@example.com",
+    "email_verified": True,
+    "name": "Google Player",
 }
 
 
-def register(client: TestClient):
-    return client.post("/auth/register", json=REGISTRATION)
+class SuccessfulGoogleClient:
+    def __init__(self, user_info: dict[str, object] | None = None) -> None:
+        self.user_info = user_info or GOOGLE_USER
+
+    async def authorize_access_token(self, _request):
+        return {"userinfo": self.user_info}
 
 
-def test_health_and_disabled_google_route(client: TestClient) -> None:
+def configure_google(client: TestClient, google_client: object) -> None:
+    client.app.state.settings.google_auth_enabled = True
+    client.app.state.oauth = SimpleNamespace(google=google_client)
+
+
+def complete_google_login(client: TestClient):
+    configure_google(client, SuccessfulGoogleClient())
+    callback = client.get("/auth/google/callback", follow_redirects=False)
+    assert callback.status_code == 303
+    assert callback.headers["location"] == "http://frontend.test/auth/callback"
+    assert "ngame_refresh" in client.cookies
+    assert "HttpOnly" in callback.headers["set-cookie"]
+    refreshed = client.post("/auth/refresh")
+    assert refreshed.status_code == 200
+    return refreshed
+
+
+def test_health_disabled_google_and_removed_password_routes(client: TestClient) -> None:
     assert client.get("/healthz").json() == {"status": "ok"}
     assert client.get("/auth/google/start").status_code == 404
+    assert client.post("/auth/register", json={}).status_code == 404
+    assert client.post("/auth/login", json={}).status_code == 404
 
 
-def test_register_returns_access_token_refresh_cookie_and_profile(client: TestClient) -> None:
-    response = register(client)
-    assert response.status_code == 201
+def test_google_callback_creates_session_access_token_and_profile(
+    client: TestClient,
+) -> None:
+    response = complete_google_login(client)
     payload = response.json()
     assert payload["token_type"] == "bearer"
     assert payload["expires_in"] == 900
-    assert payload["user"]["email"] == "player@example.com"
-    assert payload["user"]["display_name"] == "Cipher Player"
-    assert "ngame_refresh" in client.cookies
-    assert "HttpOnly" in response.headers["set-cookie"]
+    assert payload["user"]["email"] == "google@example.com"
+    assert payload["user"]["display_name"] == "Google Player"
 
     profile = client.get(
         "/auth/me", headers={"Authorization": f"Bearer {payload['access_token']}"}
@@ -38,53 +64,28 @@ def test_register_returns_access_token_refresh_cookie_and_profile(client: TestCl
     assert profile.json()["id"] == payload["user"]["id"]
 
 
-def test_duplicate_registration_and_generic_invalid_login(client: TestClient) -> None:
-    assert register(client).status_code == 201
-    assert register(client).status_code == 409
-
-    missing = client.post(
-        "/auth/login",
-        json={"email": "missing@example.com", "password": "wrong-password"},
-    )
-    wrong = client.post(
-        "/auth/login",
-        json={"email": "player@example.com", "password": "wrong-password"},
-    )
-    assert missing.status_code == 401
-    assert wrong.status_code == 401
-    assert missing.json() == wrong.json()
-
-
-def test_login_is_case_insensitive_and_refresh_token_rotates(client: TestClient) -> None:
-    assert register(client).status_code == 201
-    login = client.post(
-        "/auth/login",
-        json={
-            "email": "PLAYER@EXAMPLE.COM",
-            "password": REGISTRATION["password"],
-        },
-    )
-    assert login.status_code == 200
+def test_refresh_token_rotates_and_old_token_is_rejected(client: TestClient) -> None:
+    first = complete_google_login(client)
     old_refresh = client.cookies["ngame_refresh"]
 
     refreshed = client.post("/auth/refresh")
     assert refreshed.status_code == 200
     assert client.cookies["ngame_refresh"] != old_refresh
-    assert refreshed.json()["access_token"] != login.json()["access_token"]
+    assert refreshed.json()["access_token"] != first.json()["access_token"]
 
     client.cookies.set("ngame_refresh", old_refresh, path="/auth")
     rejected = client.post("/auth/refresh")
     assert rejected.status_code == 401
 
 
-def test_logout_revokes_refresh_session(client: TestClient) -> None:
-    assert register(client).status_code == 201
+def test_logout_revokes_google_refresh_session(client: TestClient) -> None:
+    complete_google_login(client)
     assert client.post("/auth/logout").status_code == 200
     assert client.post("/auth/refresh").status_code == 401
 
 
 def test_rejects_missing_and_tampered_access_tokens(client: TestClient) -> None:
-    response = register(client)
+    response = complete_google_login(client)
     token = response.json()["access_token"]
     header, payload, signature = token.split(".")
     changed_prefix = "A" if signature[0] != "A" else "B"
@@ -117,15 +118,52 @@ def test_cors_allows_only_the_configured_frontend(client: TestClient) -> None:
         },
     )
     assert "access-control-allow-origin" not in blocked.headers
-
-    blocked_refresh = client.post(
-        "/auth/refresh", headers={"Origin": "https://attacker.example"}
+    assert (
+        client.post(
+            "/auth/refresh", headers={"Origin": "https://attacker.example"}
+        ).status_code
+        == 403
     )
-    assert blocked_refresh.status_code == 403
+
+
+def test_google_callback_redirects_provider_errors_instead_of_returning_500(
+    client: TestClient,
+) -> None:
+    class RejectingGoogleClient:
+        async def authorize_access_token(self, _request):
+            raise OAuthError(error="access_denied", description="User cancelled")
+
+    configure_google(client, RejectingGoogleClient())
+    response = client.get("/auth/google/callback", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "http://frontend.test/auth/callback?error=authentication_failed"
+    )
+
+
+def test_google_callback_rejects_non_boolean_email_verification(
+    client: TestClient,
+) -> None:
+    configure_google(
+        client,
+        SuccessfulGoogleClient(
+            {
+                "sub": "google-subject",
+                "email": "google@example.com",
+                "email_verified": "true",
+                "name": "Google Player",
+            }
+        ),
+    )
+    response = client.get("/auth/google/callback", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "http://frontend.test/auth/callback?error=authentication_failed"
+    )
 
 
 @pytest.mark.asyncio
-async def test_google_identity_is_stable_and_does_not_silently_link_email(
+async def test_google_identity_is_stable_and_rejects_email_collisions(
     client: TestClient,
 ) -> None:
     database = client.app.state.database

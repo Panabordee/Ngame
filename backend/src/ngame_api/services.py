@@ -6,14 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings
-from .models import AuthIdentity, PasswordCredential, RefreshSession, User
+from .models import AuthIdentity, RefreshSession, User
 from .security import (
     create_access_token,
     create_refresh_token,
-    hash_password,
     hash_refresh_token,
     normalize_email,
-    verify_password,
 )
 
 
@@ -78,65 +76,6 @@ async def _new_session(
         refresh_token=refresh_token,
         user=user,
         identity=identity,
-    )
-
-
-async def register_password_user(
-    session: AsyncSession,
-    email: str,
-    password: str,
-    display_name: str,
-    settings: Settings,
-    user_agent: str | None,
-    ip_address: str | None,
-) -> SessionTokens:
-    subject = normalize_email(email)
-    if await _identity_by_provider(session, "password", subject) is not None:
-        raise IdentityConflictError
-
-    user = User(display_name=display_name)
-    session.add(user)
-    await session.flush()
-    identity = AuthIdentity(
-        user_id=user.id,
-        provider="password",
-        provider_subject=subject,
-        email=subject,
-        email_verified=not settings.email_verification_required,
-    )
-    session.add_all(
-        [identity, PasswordCredential(user_id=user.id, password_hash=hash_password(password))]
-    )
-    await session.flush()
-    return await _new_session(
-        session, user, identity, settings, user_agent, ip_address
-    )
-
-
-async def authenticate_password_user(
-    session: AsyncSession,
-    email: str,
-    password: str,
-    settings: Settings,
-    user_agent: str | None,
-    ip_address: str | None,
-) -> SessionTokens:
-    subject = normalize_email(email)
-    identity = await _identity_by_provider(session, "password", subject)
-    credential = (
-        await session.get(PasswordCredential, identity.user_id)
-        if identity is not None
-        else None
-    )
-    if not verify_password(password, credential.password_hash if credential else None):
-        raise AuthenticationError
-    if identity is None:
-        raise AuthenticationError
-    user = await _user_by_id(session, identity.user_id)
-    if user is None or user.status != "active":
-        raise AuthenticationError
-    return await _new_session(
-        session, user, identity, settings, user_agent, ip_address
     )
 
 

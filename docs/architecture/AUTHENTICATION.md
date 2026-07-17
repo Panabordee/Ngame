@@ -1,78 +1,42 @@
-# Authentication architecture
+# Google-only authentication
 
-## Supported login methods
-
-The current API supports:
-
-- Email/password registration and sign-in
-- Google OpenID Connect sign-in
-
-Authenticated account linking is a future feature; the API deliberately refuses to silently merge password and Google identities that share an email address.
-
-Until an SMTP provider is configured, use Mailpit for development email and keep production email/password registration disabled. Google sign-in remains suitable for the initial production deployment.
-
-## Service ownership
-
-FastAPI is the only authentication authority. It owns users, credentials, external identities, and refresh sessions. Verification and password-reset tokens are planned but not implemented. Colyseus does not issue application credentials; it only verifies short-lived access JWTs issued by FastAPI.
+FastAPI is the authentication authority. NGAME never receives a Google password.
 
 ## Browser flow
 
-1. The browser signs in through FastAPI.
-2. FastAPI returns a short-lived access JWT in the response body.
-3. FastAPI sets an opaque refresh token in a `Secure`, `HttpOnly`, `SameSite=Lax` host-only cookie on `ngame-api.ce-nacl.com`.
-4. The browser keeps the access JWT in memory, not local storage.
-5. The browser assigns the access JWT to the Colyseus client before matchmaking.
-6. Colyseus verifies the signature, issuer, audience, expiry, and token type before accepting the room join.
-7. Colyseus uses the JWT `sub` claim as the player identity. Connection/session IDs never replace the authenticated user ID.
+1. The client opens `GET /auth/google/start`.
+2. FastAPI starts Google OpenID Connect with `openid email profile` and a signed state cookie.
+3. Google returns to `GET /auth/google/callback`.
+4. FastAPI validates the provider response and requires a verified email.
+5. FastAPI stores the stable Google `sub`, user profile, and a hashed refresh-session token.
+6. The browser receives the opaque refresh token in a host-only `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production).
+7. `POST /auth/refresh` rotates that cookie and returns a short-lived RS256 access JWT.
+8. The browser sends the access JWT to Colyseus; realtime verifies issuer, audience, type, signature, and expiry.
 
-On a browser refresh, the frontend obtains a new access JWT through the refresh cookie. Refresh tokens rotate on every use; only their hashes are stored in PostgreSQL.
-
-## Google sign-in
-
-Use the authorization-code OpenID Connect flow with FastAPI as the callback handler. Validate `state`, issuer, audience, signature, expiry, and nonce. Request only `openid email profile` scopes.
-
-Required Google Console values for production:
-
-```text
-Authorized JavaScript origin:
-https://ngame.ce-nacl.com
-
-Authorized redirect URI:
-https://ngame-api.ce-nacl.com/auth/google/callback
-```
-
-Identify a Google login by the stable provider subject (`sub`), never by display name. Do not silently attach a Google identity to an existing password account merely because email strings match. Require authenticated account linking when an existing identity would be affected.
-
-## Current API contract
+## Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/auth/register` | Create an email/password account |
-| `POST` | `/auth/login` | Authenticate email/password |
-| `POST` | `/auth/refresh` | Rotate refresh token and return access JWT |
-| `POST` | `/auth/logout` | Revoke refresh session and clear cookie |
-| `GET` | `/auth/google/start` | Begin Google OIDC flow |
-| `GET` | `/auth/google/callback` | Complete Google OIDC flow |
-| `GET` | `/auth/me` | Return the authenticated profile |
+| `GET` | `/auth/google/start` | start Google OAuth |
+| `GET` | `/auth/google/callback` | validate Google and create a session |
+| `POST` | `/auth/refresh` | rotate refresh session and issue access JWT |
+| `POST` | `/auth/logout` | revoke the current refresh session and clear cookie |
+| `GET` | `/auth/me` | return the authenticated profile |
 
-Planned endpoints are `/auth/verify-email`, `/auth/forgot-password`, and `/auth/reset-password`. Production email auth stays disabled until those flows and SMTP delivery exist.
+There are no password registration or login endpoints.
 
-Return generic login/reset errors so the API does not reveal whether an email address exists.
+## Stored data
 
-## Database entities
+- `users`: display name and account status
+- `auth_identities`: unique Google subject, unique normalized verified email, provider
+- `refresh_sessions`: hashed opaque token, expiry, revocation, rotation link, client metadata
 
-- `users`: stable user ID, display name, status, timestamps
-- `auth_identities`: provider (`password` or `google`), provider subject, normalized email
-- `password_credentials`: user ID and Argon2id hash
-- `refresh_sessions`: token hash, user ID, expiry, rotation chain, revocation metadata
+Migration `20260717_0002` deletes all legacy password users and their refresh sessions, then drops `password_credentials`. Downgrading recreates the empty table but cannot restore deleted accounts.
 
-The current migration contains the first four entities. Email verification, password reset, matches, and match-player records require later migrations.
+## Security requirements
 
-## Security baseline
-
-- Hash passwords with Argon2id.
-- Sign access JWTs asymmetrically; mount private/public keys as Docker secrets.
-- Room actions are rate-limited now. Add distributed rate limits for registration, login, refresh, password reset, and matchmaking before public launch.
-- Accept CORS credentials only from the exact frontend origin.
-- Set `Secure` cookies in production and never log tokens, passwords, authorization codes, or client secrets.
-- Keep Google client secrets and JWT private keys outside the repository.
+- Use exact CORS origins; never `*` with credentials.
+- Keep Google secret, OAuth state secret, refresh tokens, and JWT private key out of logs and Git.
+- Mount the private JWT key only into the API container.
+- Keep access JWTs short-lived and refresh cookies `Secure` in production.
+- Add distributed limits for OAuth start/callback, refresh, and matchmaking before a public launch.

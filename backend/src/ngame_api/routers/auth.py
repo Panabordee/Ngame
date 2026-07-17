@@ -1,20 +1,20 @@
 from typing import Annotated
 
+from authlib.integrations.base_client.errors import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
 from ..dependencies import get_current_profile, get_session, get_settings
 from ..models import AuthIdentity, User
-from ..schemas import AuthResponse, LoginRequest, MessageResponse, RegisterRequest, UserResponse
+from ..schemas import AuthResponse, MessageResponse, UserResponse
 from ..services import (
     AuthenticationError,
     IdentityConflictError,
     SessionTokens,
     authenticate_google_user,
-    authenticate_password_user,
-    register_password_user,
     revoke_refresh_session,
     rotate_refresh_session,
 )
@@ -71,71 +71,6 @@ def _auth_response(tokens: SessionTokens, settings: Settings) -> AuthResponse:
             email_verified=tokens.identity.email_verified,
         ),
     )
-
-
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    body: RegisterRequest,
-    request: Request,
-    response: Response,
-    settings: Annotated[Settings, Depends(get_settings)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> AuthResponse:
-    _require_trusted_origin(request, settings)
-    if not settings.email_auth_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
-    user_agent, ip_address = _client_metadata(request)
-    try:
-        tokens = await register_password_user(
-            session,
-            str(body.email),
-            body.password,
-            body.display_name,
-            settings,
-            user_agent,
-            ip_address,
-        )
-        await session.commit()
-    except IdentityConflictError:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Unable to create account.",
-        ) from None
-    _set_refresh_cookie(response, tokens.refresh_token, settings)
-    return _auth_response(tokens, settings)
-
-
-@router.post("/login", response_model=AuthResponse)
-async def login(
-    body: LoginRequest,
-    request: Request,
-    response: Response,
-    settings: Annotated[Settings, Depends(get_settings)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> AuthResponse:
-    _require_trusted_origin(request, settings)
-    if not settings.email_auth_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
-    user_agent, ip_address = _client_metadata(request)
-    try:
-        tokens = await authenticate_password_user(
-            session,
-            str(body.email),
-            body.password,
-            settings,
-            user_agent,
-            ip_address,
-        )
-        await session.commit()
-    except AuthenticationError:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
-        ) from None
-    _set_refresh_cookie(response, tokens.refresh_token, settings)
-    return _auth_response(tokens, settings)
 
 
 @router.post("/refresh", response_model=AuthResponse)
@@ -221,25 +156,40 @@ async def google_callback(
     try:
         token = await request.app.state.oauth.google.authorize_access_token(request)
         user_info = token["userinfo"]
+        subject = user_info.get("sub")
+        email = user_info.get("email")
+        if (
+            not isinstance(subject, str)
+            or not subject
+            or not isinstance(email, str)
+            or not email
+        ):
+            raise AuthenticationError
+        provider_name = user_info.get("name")
+        display_name = (
+            provider_name
+            if isinstance(provider_name, str) and provider_name.strip()
+            else "Player"
+        )
         user_agent, ip_address = _client_metadata(request)
         tokens = await authenticate_google_user(
             session,
-            subject=user_info["sub"],
-            email=user_info["email"],
-            email_verified=bool(user_info.get("email_verified")),
-            display_name=user_info.get("name") or "Player",
+            subject=subject,
+            email=email,
+            email_verified=user_info.get("email_verified") is True,
+            display_name=display_name,
             settings=settings,
             user_agent=user_agent,
             ip_address=ip_address,
         )
         await session.commit()
-    except IdentityConflictError:
+    except (IdentityConflictError, IntegrityError):
         await session.rollback()
         return RedirectResponse(
             f"{settings.frontend_public_url}/auth/callback?error=identity_conflict",
             status_code=status.HTTP_303_SEE_OTHER,
         )
-    except (AuthenticationError, KeyError):
+    except (AuthenticationError, KeyError, OAuthError):
         await session.rollback()
         return RedirectResponse(
             f"{settings.frontend_public_url}/auth/callback?error=authentication_failed",

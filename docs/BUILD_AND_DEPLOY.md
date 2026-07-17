@@ -1,10 +1,24 @@
-# Build, Docker Compose, and deployment
+# Ubuntu 24.04 + Docker
 
-## Prepare Ubuntu 24.04 LTS
+## 1. Install the runtime
 
-Create an Ubuntu Server 24.04 LTS VM on Proxmox with a stable private address. A reasonable starting allocation is 4 vCPU, 8 GB RAM, and 50 GB disk; adjust after measuring. Install Docker Engine, Buildx, and the Docker Compose plugin from Docker's official Ubuntu repository.
+```bash
+sudo apt update
+sudo apt install -y git docker.io docker-compose-v2 openssl
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
 
-## Prepare configuration and secrets
+## 2. Configure Google OAuth
+
+Create a Google **Web application** OAuth client and add:
+
+- Local origin: `http://localhost:8080`
+- Local callback: `http://localhost:8000/auth/google/callback`
+- Production origin: `https://ngame.ce-nacl.com`
+- Production callback: `https://ngame-api.ce-nacl.com/auth/google/callback`
+
+## 3. Configure NGAME
 
 ```bash
 cp .env.example .env
@@ -12,11 +26,12 @@ mkdir -p secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out secrets/jwt-private.pem
 openssl pkey -in secrets/jwt-private.pem -pubout -out secrets/jwt-public.pem
 chmod 600 secrets/jwt-private.pem
+openssl rand -hex 32
 ```
 
-Replace every placeholder password/token. For a local Compose run, keep the localhost public URLs, `COOKIE_SECURE=false`, and development email auth settings.
+Put the Google client ID/secret and the generated random value into `.env`. For local Docker keep the localhost URLs, `NGAME_ENV=development`, and `COOKIE_SECURE=false`.
 
-For production set:
+For production use:
 
 ```dotenv
 NGAME_ENV=production
@@ -24,79 +39,40 @@ FRONTEND_PUBLIC_URL=https://ngame.ce-nacl.com
 API_PUBLIC_URL=https://ngame-api.ce-nacl.com
 REALTIME_PUBLIC_URL=https://ngame-realtime.ce-nacl.com
 CORS_ALLOWED_ORIGINS=https://ngame.ce-nacl.com
+JWT_ISSUER=https://ngame-api.ce-nacl.com
+GOOGLE_AUTH_ENABLED=true
 GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
-EMAIL_AUTH_ENABLED=false
-EMAIL_VERIFICATION_REQUIRED=true
 ```
 
-Set `GOOGLE_AUTH_ENABLED=true` only after adding the real client ID/secret and registering the exact Google origin and callback. `EMAIL_VERIFICATION_REQUIRED=true` is harmless while email auth is disabled and prevents accidentally enabling unverified production registration.
+If Nginx is on another host, also set `PUBLISH_ADDRESS` to the NGAME VM private IP and `FORWARDED_ALLOW_IPS` to the proxy private IP. Allow ports 8080, 8000, and 2567 only from that proxy.
 
-## Validate source before building
-
-```bash
-npm ci
-npm run typecheck
-npm test
-npm run build --workspace @ngame/client
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e 'backend[dev]'
-python -m pytest backend/tests
-```
-
-## Build and run Compose
+## 4. Build and run
 
 ```bash
 docker compose config
-docker compose build --pull
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100 api realtime frontend
 ```
 
-The API service runs `alembic upgrade head` before starting Uvicorn. To run the migration explicitly:
+Open `http://localhost:8080`. Health checks:
 
 ```bash
-docker compose run --rm api alembic upgrade head
+curl -f http://localhost:8000/healthz
+curl -f http://localhost:2567/healthz
 ```
 
-Local Compose URLs:
+The API runs `alembic upgrade head` on every start. Migration `20260717_0002` permanently removes old password accounts and their refresh sessions.
 
-- Frontend: `http://localhost:8080`
-- API health: `http://localhost:8000/healthz`
-- Realtime health: `http://localhost:2567/healthz`
+## 5. Production proxy and updates
 
-Start Mailpit only for development:
-
-```bash
-docker compose --profile dev-mail up -d mailpit
-```
-
-Its local inbox is `http://localhost:8025`. Stop the stack with `docker compose down`. Do not add `--volumes` unless intentionally deleting the PostgreSQL and Redis data.
-
-## External Nginx and firewall
-
-Use `infra/nginx/ngame.conf.example`. Replace `NGAME_VM_PRIVATE_IP`, configure certificates for all three hostnames, and preserve WebSocket upgrade headers for realtime traffic.
-
-If Nginx is on the same VM, keep `PUBLISH_ADDRESS=127.0.0.1`. If it is on another host, set `PUBLISH_ADDRESS` to the VM's private address and allow ports 8080, 8000, and 2567 only from the proxy IP. Never publish PostgreSQL or Redis.
-
-Point DNS for `ngame.ce-nacl.com`, `ngame-api.ce-nacl.com`, and `ngame-realtime.ce-nacl.com` to the existing proxy. All three are single-label subdomains and can be covered by the existing `*.ce-nacl.com` wildcard certificate.
-
-## Update procedure
-
-Work on a feature branch, review the diff, and then:
+Use `infra/nginx/ngame.conf.example` for `ngame.ce-nacl.com`, `ngame-api.ce-nacl.com`, and `ngame-realtime.ce-nacl.com`. Replace `NGAME_VM_PRIVATE_IP` and configure TLS on the existing proxy.
 
 ```bash
 git pull --ff-only
-docker compose build --pull
-docker compose run --rm api alembic upgrade head
-docker compose up -d --remove-orphans
+docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
-Review migrations and take a PostgreSQL backup before schema changes. Do not replace the database volume during routine updates.
-
-## Backup and restore
-
-Schedule PostgreSQL logical dumps to storage outside the VM and keep separate Proxmox VM backups. Record the production backup destination, encryption, retention, restore command, and restore-test schedule before launch. VM snapshots alone are not a sufficient database backup.
+Stop without deleting data using `docker compose down`. Never use `docker compose down --volumes` unless PostgreSQL and Redis data are intentionally being erased.

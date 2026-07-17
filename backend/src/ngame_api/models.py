@@ -27,6 +27,7 @@ class AuthIdentity(Base):
     __tablename__ = "auth_identities"
     __table_args__ = (
         UniqueConstraint("provider", "provider_subject", name="uq_auth_identity_provider_subject"),
+        UniqueConstraint("email", name="uq_auth_identity_email"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -36,16 +37,6 @@ class AuthIdentity(Base):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-
-
-class PasswordCredential(Base):
-    __tablename__ = "password_credentials"
-
-    user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    password_hash: Mapped[str] = mapped_column(String(512))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class RefreshSession(Base):
