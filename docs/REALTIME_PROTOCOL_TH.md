@@ -1,6 +1,6 @@
 # Realtime Room Protocol
 
-ชื่อ Colyseus room คือ `cipher_deck` FastAPI ออก access JWT อายุสั้น ส่วน Colyseus ใช้ claim `sub` เป็น player ID และใช้ `name` ที่ server ออกให้เป็นชื่อแสดงผล
+ชื่อ Colyseus room คือ `cipher_deck` FastAPI ออก access JWT ที่ลงนาม ส่วน Colyseus ใช้ claim `sub` เป็น player ID และใช้ `name` ที่ server ออกให้เป็นชื่อแสดงผล JWT ของบัญชีใช้ `account_type=registered` ส่วน Guest ใช้ `account_type=guest` พร้อม `guest_session_id` ที่ server สร้าง
 
 ## การเข้าห้อง
 
@@ -20,6 +20,8 @@ const room = await client.joinOrCreate("cipher_deck", {
 สร้างห้องเลขด้วย `client.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" })` เซิร์ฟเวอร์จะส่ง `roomCode` 6 หลักที่ไม่ซ้ำมาใน state ผู้เข้าร่วมเรียก `GET /rooms/by-code/{roomCode}` เพื่อรับ `roomId` แล้วเรียก `client.joinById(roomId)` ห้องแบบรหัสจะไม่ถูกเลือกโดย Quick Match
 
 หลัง join ให้ผูก message handler ทันทีแล้วส่ง `sync` เพื่อป้องกันการพลาด state ที่ถูกส่งระหว่าง join handshake
+
+Guest session จองได้ครั้งละหนึ่งห้องและเปลี่ยนห้องได้เฉพาะเมื่อออกจาก lobby ก่อนกด Start เมื่อ host เริ่มแล้ว binding จะถูก commit และ Guest JWT นั้นเข้าห้องเกมอื่นไม่ได้ Browser เก็บ `room.reconnectionToken` ใน `sessionStorage` ของแท็บและเรียก `client.reconnect(token)` หลัง refresh หน้า โดยไม่สร้าง identity ใหม่เพื่อหนีการ forfeit
 
 ## ข้อความจาก Client ไป Server
 

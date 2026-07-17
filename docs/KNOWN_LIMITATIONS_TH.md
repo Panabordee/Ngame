@@ -10,4 +10,5 @@
 - Profile รองรับ display name, username และ URL รูปจาก Google แต่ยังอัปโหลด avatar เองไม่ได้
 - Google sign-in ต้องใช้ credential จริงและตั้ง origin/callback ให้ตรง Automated test ใช้ provider stub จึงตรวจ Google tenant จริงไม่ได้
 - ข้อความใน realtime room มี rate limit แล้ว แต่ distributed abuse control ของ FastAPI auth endpoint ยังเป็นงานที่ต้องทำก่อนเปิดสาธารณะ
+- การผูก Guest หนึ่งเกมอยู่ใน process เพราะ Colyseus ปัจจุบันรัน instance เดียว หากเพิ่ม realtime หลาย replica ต้องใช้ distributed matchmaker และ shared atomic Guest registry
 - MVP ยังไม่มี mobile-specific behavior, Steamworks integration หรือระบบชำระเงิน

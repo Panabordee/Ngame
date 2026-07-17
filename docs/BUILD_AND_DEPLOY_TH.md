@@ -41,6 +41,8 @@ REALTIME_PUBLIC_URL=https://ngame-realtime.ce-nacl.com
 CORS_ALLOWED_ORIGINS=https://ngame.ce-nacl.com
 JWT_ISSUER=https://ngame-api.ce-nacl.com
 GOOGLE_AUTH_ENABLED=true
+GUEST_AUTH_ENABLED=true
+GUEST_SESSION_TTL_SECONDS=21600
 GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
 ```

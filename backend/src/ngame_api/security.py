@@ -41,6 +41,7 @@ def create_access_token(user: User, settings: Settings) -> str:
         "exp": now + timedelta(seconds=settings.access_token_ttl_seconds),
         "jti": str(uuid4()),
         "typ": "access",
+        "account_type": "registered",
     }
     if user.username is not None:
         payload["preferred_username"] = user.username
@@ -49,6 +50,32 @@ def create_access_token(user: User, settings: Settings) -> str:
         _read_key(settings.jwt_private_key_file),
         algorithm="RS256",
     )
+
+
+def create_guest_access_token(
+    display_name: str, settings: Settings
+) -> tuple[str, UUID, UUID]:
+    now = datetime.now(timezone.utc)
+    user_id = uuid4()
+    guest_session_id = uuid4()
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "name": display_name,
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "iat": now,
+        "exp": now + timedelta(seconds=settings.guest_session_ttl_seconds),
+        "jti": str(uuid4()),
+        "typ": "access",
+        "account_type": "guest",
+        "guest_session_id": str(guest_session_id),
+    }
+    token = jwt.encode(
+        payload,
+        _read_key(settings.jwt_private_key_file),
+        algorithm="RS256",
+    )
+    return token, user_id, guest_session_id
 
 
 def decode_access_token(token: str, settings: Settings) -> UUID:
@@ -61,7 +88,10 @@ def decode_access_token(token: str, settings: Settings) -> UUID:
             issuer=settings.jwt_issuer,
             options={"require": ["sub", "iss", "aud", "iat", "exp", "jti", "typ"]},
         )
-        if payload.get("typ") != "access":
+        if (
+            payload.get("typ") != "access"
+            or payload.get("account_type", "registered") != "registered"
+        ):
             raise InvalidTokenError("invalid token type")
         return UUID(payload["sub"])
     except (InvalidTokenError, ValueError, TypeError, KeyError) as exc:

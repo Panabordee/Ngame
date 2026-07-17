@@ -1,9 +1,13 @@
+import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 from authlib.integrations.base_client.errors import OAuthError
 from fastapi.testclient import TestClient
+import jwt
 import pytest
 
+from ngame_api.models import AuthIdentity, RefreshSession, User
 from ngame_api.services import IdentityConflictError, authenticate_google_user
 
 
@@ -46,6 +50,78 @@ def test_health_disabled_google_and_removed_password_routes(client: TestClient) 
     assert client.get("/auth/google/start").status_code == 404
     assert client.post("/auth/register", json={}).status_code == 404
     assert client.post("/auth/login", json={}).status_code == 404
+
+
+def test_guest_session_is_signed_temporary_and_not_persisted(
+    client: TestClient, settings
+) -> None:
+    response = client.post(
+        "/auth/guest",
+        headers={"Origin": "http://frontend.test"},
+        json={"display_name": "  One   Match Guest  "},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["expires_in"] == settings.guest_session_ttl_seconds
+    assert payload["user"] == {
+        "id": payload["user"]["id"],
+        "display_name": "One Match Guest",
+        "username": None,
+        "avatar_url": None,
+        "email": None,
+        "email_verified": False,
+        "account_type": "guest",
+    }
+    claims = jwt.decode(
+        payload["access_token"],
+        Path(settings.jwt_public_key_file).read_text(encoding="utf-8"),
+        algorithms=["RS256"],
+        audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
+    )
+    assert claims["typ"] == "access"
+    assert claims["account_type"] == "guest"
+    assert claims["sub"] == payload["user"]["id"]
+    assert isinstance(claims["guest_session_id"], str)
+    assert response.headers["cache-control"] == "no-store"
+    assert "ngame_refresh" not in client.cookies
+    assert client.post("/auth/refresh").status_code == 401
+    assert (
+        client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {payload['access_token']}"},
+        ).status_code
+        == 401
+    )
+
+    async def stored_auth_rows() -> tuple[int, int, int]:
+        database = client.app.state.database
+        async with database.sessions() as session:
+            return (
+                len((await session.execute(User.__table__.select())).all()),
+                len((await session.execute(AuthIdentity.__table__.select())).all()),
+                len((await session.execute(RefreshSession.__table__.select())).all()),
+            )
+
+    assert asyncio.run(stored_auth_rows()) == (0, 0, 0)
+
+
+def test_guest_session_validates_origin_name_and_feature_flag(
+    client: TestClient,
+) -> None:
+    blocked = client.post(
+        "/auth/guest",
+        headers={"Origin": "https://attacker.example"},
+        json={"display_name": "Guest"},
+    )
+    assert blocked.status_code == 403
+    assert client.post("/auth/guest", json={"display_name": "x" * 33}).status_code == 422
+    generated = client.post("/auth/guest", json={"display_name": "   "})
+    assert generated.status_code == 200
+    assert generated.json()["user"]["display_name"].startswith("Guest ")
+
+    client.app.state.settings.guest_auth_enabled = False
+    assert client.post("/auth/guest", json={}).status_code == 404
 
 
 def test_google_callback_creates_session_access_token_and_profile(

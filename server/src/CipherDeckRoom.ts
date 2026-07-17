@@ -43,6 +43,10 @@ import {
 import type { AuthenticatedUser, Authenticator } from "./auth.ts";
 import type { ServerConfig } from "./config.ts";
 import {
+  InMemoryGuestSessionRegistry,
+  type GuestSessionRegistry,
+} from "./guestSessions.ts";
+import {
   parseGuessMessage,
   parseInsertMessage,
   parseRoomSettings,
@@ -112,6 +116,8 @@ export class CipherDeckRoom extends Room<{
     throw new Error("CipherDeckRoom authentication is not configured.");
   };
 
+  static guestSessions: GuestSessionRegistry = new InMemoryGuestSessionRegistry();
+
   static runtimeConfig: Pick<
     ServerConfig,
     "reconnectSeconds" | "maxMessagesPerSecond"
@@ -135,6 +141,7 @@ export class CipherDeckRoom extends Room<{
   private game: GameState | null = null;
   private readonly droppedPlayerIds = new Set<string>();
   private readonly readyPlayerIds = new Set<string>();
+  private readonly reservedGuestSessionIds = new Set<string>();
   private startingRevealTimer: ReturnType<typeof setTimeout> | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private turnDeadlineMs: number | null = null;
@@ -253,14 +260,24 @@ export class CipherDeckRoom extends Room<{
     if (this.roomCode !== null) {
       CipherDeckRoom.activeRoomCodes.delete(this.roomCode);
     }
+    for (const guestSessionId of this.reservedGuestSessionIds) {
+      CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId);
+    }
   }
 
   async onJoin(client: CipherClient): Promise<void> {
+    const reservation = this.reserveGuestSession(client);
+    if (reservation === "conflict") {
+      client.error(409, "This guest session is already assigned to another match.");
+      client.leave(4003);
+      return;
+    }
     const userId = this.userId(client);
     const duplicate = this.clients.some(
       (connected) => connected !== client && connected.auth?.userId === userId,
     );
     if (duplicate || this.game !== null || this.startingSelection !== null) {
+      if (reservation === "created") this.releaseGuestReservation(client);
       client.error(409, duplicate ? "User is already in this room." : "Match already started.");
       client.leave(4003);
       return;
@@ -320,6 +337,7 @@ export class CipherDeckRoom extends Room<{
   async onLeave(client: CipherClient): Promise<void> {
     if (this.game === null || this.game.phase === "game-over") {
       const userId = this.userId(client);
+      this.releaseGuestReservation(client);
       if (this.startingSelection !== null) {
         await this.abortStartingSelection(userId);
       }
@@ -650,6 +668,9 @@ export class CipherDeckRoom extends Room<{
       this.sendError(client, "PLAYERS_NOT_READY", "Every connected player must be ready.");
       return;
     }
+    for (const guestSessionId of this.reservedGuestSessionIds) {
+      CipherDeckRoom.guestSessions.commit(guestSessionId, this.roomId);
+    }
     await this.beginStartingSelection();
   }
 
@@ -879,6 +900,34 @@ export class CipherDeckRoom extends Room<{
       return `Player · ${this.userId(client).slice(0, 4).toUpperCase()}`;
     }
     return displayName.trim().slice(0, 32);
+  }
+
+  private reserveGuestSession(
+    client: CipherClient,
+  ): "not-guest" | "created" | "same-room" | "conflict" {
+    const auth = client.auth;
+    if (auth?.accountType !== "guest") return "not-guest";
+    if (
+      typeof auth.guestSessionId !== "string" ||
+      typeof auth.expiresAtMs !== "number"
+    ) {
+      return "conflict";
+    }
+    const result = CipherDeckRoom.guestSessions.reserve(
+      auth.guestSessionId,
+      this.roomId,
+      auth.expiresAtMs,
+    );
+    if (result !== "conflict") this.reservedGuestSessionIds.add(auth.guestSessionId);
+    return result;
+  }
+
+  private releaseGuestReservation(client: CipherClient): void {
+    const guestSessionId = client.auth?.guestSessionId;
+    if (client.auth?.accountType !== "guest" || guestSessionId === undefined) return;
+    if (CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId)) {
+      this.reservedGuestSessionIds.delete(guestSessionId);
+    }
   }
 
   private isEliminated(userId: string): boolean {

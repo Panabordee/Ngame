@@ -16,6 +16,7 @@ import { createGameServer } from "./app.config.ts";
 import { CipherDeckRoom } from "./CipherDeckRoom.ts";
 import { loadServerConfig } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
+import { InMemoryGuestSessionRegistry } from "./guestSessions.ts";
 
 const TEST_CONFIG: ServerConfig = {
   port: 2568,
@@ -34,10 +35,23 @@ before(async () => {
   CipherDeckRoom.startingRevealMilliseconds = 5;
   testServer = await boot(
     createGameServer(TEST_CONFIG, async (token) => {
+      if (token.startsWith("guest-")) {
+        return {
+          userId: token,
+          displayName: `Guest ${token.slice(6)}`,
+          accountType: "guest",
+          guestSessionId: `session-${token}`,
+          expiresAtMs: Date.now() + 60_000,
+        };
+      }
       if (!token.startsWith("user-")) {
         throw new Error("Invalid test credential.");
       }
-      return { userId: token, displayName: `Player ${token.slice(5)}` };
+      return {
+        userId: token,
+        displayName: `Player ${token.slice(5)}`,
+        accountType: "registered",
+      };
     }),
   );
 });
@@ -238,6 +252,82 @@ test("server config requires exact CORS origins", () => {
     }).corsAllowedOrigins,
     ["https://one.example", "https://two.example"],
   );
+});
+
+test("guest-session registry reserves one room and remains consumed after commit", () => {
+  const registry = new InMemoryGuestSessionRegistry();
+  const expiresAtMs = Date.now() + 60_000;
+  assert.equal(registry.reserve("guest-session", "room-a", expiresAtMs), "created");
+  assert.equal(registry.reserve("guest-session", "room-a", expiresAtMs), "same-room");
+  assert.equal(registry.reserve("guest-session", "room-b", expiresAtMs), "conflict");
+  assert.equal(registry.releaseReservation("guest-session", "room-a"), true);
+  assert.equal(registry.reserve("guest-session", "room-b", expiresAtMs), "created");
+  assert.equal(registry.commit("guest-session", "room-b"), true);
+  assert.equal(registry.releaseReservation("guest-session", "room-b"), false);
+  assert.equal(registry.reserve("guest-session", "room-c", expiresAtMs), "conflict");
+});
+
+test("guest can leave a waiting lobby but cannot switch rooms after match start", async () => {
+  testServer.sdk.auth.token = "guest-waiting";
+  const waiting = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  waiting.onMessage("state", () => undefined);
+  await assert.rejects(
+    testServer.sdk.create("cipher_deck", {
+      desiredPlayers: 3,
+      lobbyMode: "code",
+    }),
+    /already assigned to another match/,
+  );
+  await waiting.leave(true);
+
+  const released = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  released.onMessage("state", () => undefined);
+  await released.leave(true);
+
+  testServer.sdk.auth.token = "guest-committed";
+  const guest = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  guest.onMessage("state", () => undefined);
+  testServer.sdk.auth.token = "user-guest-test-2";
+  const player2 = await testServer.sdk.joinById(guest.roomId);
+  player2.onMessage("state", () => undefined);
+  testServer.sdk.auth.token = "user-guest-test-3";
+  const player3 = await testServer.sdk.joinById(guest.roomId);
+  player3.onMessage("state", () => undefined);
+
+  const starting = waitForStateWhere(
+    guest,
+    (roomState) => roomState.status === "starting",
+  );
+  guest.send("ready", true);
+  player2.send("ready", true);
+  player3.send("ready", true);
+  await waitForStateWhere(
+    guest,
+    (roomState) => roomState.players.every((player) => player.ready),
+  );
+  guest.send("start-game");
+  await starting;
+  await guest.leave(true);
+
+  testServer.sdk.auth.token = "guest-committed";
+  await assert.rejects(
+    testServer.sdk.create("cipher_deck", {
+      desiredPlayers: 3,
+      lobbyMode: "code",
+    }),
+    /already assigned to another match/,
+  );
+  await player2.leave(true);
+  await player3.leave(true);
 });
 
 test("three authenticated clients can play without leaking hidden cards", async () => {

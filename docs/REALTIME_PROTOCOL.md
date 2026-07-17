@@ -1,6 +1,6 @@
 # Realtime room protocol
 
-The Colyseus room name is `cipher_deck`. FastAPI issues the short-lived access JWT. Colyseus uses `sub` as player ID and the server-issued `name` claim as display name.
+The Colyseus room name is `cipher_deck`. FastAPI issues the signed access JWT. Colyseus uses `sub` as player ID and the server-issued `name` claim as display name. Registered JWTs use `account_type=registered`; ephemeral JWTs use `account_type=guest` with a server-generated `guest_session_id`.
 
 ## Join
 
@@ -20,6 +20,8 @@ const room = await client.joinOrCreate("cipher_deck", {
 Create a numbered room with `client.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" })`. The server returns a unique six-digit `roomCode` in the state. To join it, request `GET /rooms/by-code/{roomCode}`, read the returned `roomId`, and call `client.joinById(roomId)`. Code rooms never match Quick Match requests.
 
 Register message handlers immediately, then send `sync`. The explicit sync prevents a client from missing a state message emitted during the join handshake.
+
+A Guest session may reserve only one room. It may switch rooms only after leaving a waiting lobby before Start. Once the host starts, the binding is committed and that Guest JWT cannot join another match. The browser stores `room.reconnectionToken` in per-tab `sessionStorage` and calls `client.reconnect(token)` after a reload; it does not create a new identity to bypass a forfeit.
 
 ## Client-to-server messages
 

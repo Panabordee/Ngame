@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -10,6 +11,19 @@ class UserResponse(BaseModel):
     avatar_url: str | None
     email: EmailStr | None
     email_verified: bool
+    account_type: Literal["registered", "guest"] = "registered"
+
+
+class GuestLoginRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=32)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
 
 
 class UserUpdateRequest(BaseModel):

@@ -10,4 +10,5 @@
 - Player profiles support display name, username, and the Google avatar URL. Uploading a custom avatar is not implemented.
 - Google sign-in requires real Google credentials and exact origin/callback configuration; automated tests use a provider stub and cannot validate a real Google tenant.
 - Realtime room messages are rate-limited, but distributed abuse controls for the FastAPI auth endpoints are still pending.
+- One-match Guest bindings are process-local because the current Colyseus deployment is a single instance. Multiple realtime replicas require a distributed matchmaker plus a shared atomic Guest registry.
 - The MVP has no mobile-specific behavior, Steamworks integration, or payment system.

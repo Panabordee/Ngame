@@ -16,7 +16,7 @@ Copy `.env.example` to `.env`; never commit `.env` or `secrets/`.
 
 Compose publishes frontend `8080`, API `8000`, and realtime `2567`. PostgreSQL and Redis remain internal.
 
-## Google-only authentication
+## Authentication
 
 | Variable | Purpose |
 | --- | --- |
@@ -27,8 +27,10 @@ Compose publishes frontend `8080`, API `8000`, and realtime `2567`. PostgreSQL a
 | `OAUTH_STATE_SECRET` | unique random value of at least 32 characters |
 | `COOKIE_SECURE` | `false` on localhost; `true` in production |
 | `REFRESH_TOKEN_TTL_DAYS` | refresh-session lifetime |
+| `GUEST_AUTH_ENABLED` | enables ephemeral one-match Guest sessions; default `true` |
+| `GUEST_SESSION_TTL_SECONDS` | Guest JWT lifetime; default `21600` (6 hours) |
 
-Password signup/signin no longer exists. Migration `20260717_0002` deletes old password accounts and their sessions.
+Password signup/signin no longer exists. Google users are persistent; Guest sessions create no database rows and have no refresh cookie. Migration `20260717_0002` deletes old password accounts and their sessions.
 
 ## JWT and data
 

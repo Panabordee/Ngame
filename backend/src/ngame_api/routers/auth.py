@@ -1,3 +1,4 @@
+import secrets
 from typing import Annotated
 
 from authlib.integrations.base_client.errors import OAuthError
@@ -9,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import Settings
 from ..dependencies import get_current_profile, get_session, get_settings
 from ..models import AuthIdentity, User
-from ..schemas import AuthResponse, MessageResponse, UserResponse, UserUpdateRequest
+from ..schemas import (
+    AuthResponse,
+    GuestLoginRequest,
+    MessageResponse,
+    UserResponse,
+    UserUpdateRequest,
+)
+from ..security import create_guest_access_token
 from ..services import (
     AuthenticationError,
     IdentityConflictError,
@@ -73,6 +81,37 @@ def _auth_response(tokens: SessionTokens, settings: Settings) -> AuthResponse:
             avatar_url=tokens.user.avatar_url,
             email=tokens.identity.email,
             email_verified=tokens.identity.email_verified,
+            account_type="registered",
+        ),
+    )
+
+
+@router.post("/guest", response_model=AuthResponse)
+async def guest_login(
+    payload: GuestLoginRequest,
+    request: Request,
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthResponse:
+    if not settings.guest_auth_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    _require_trusted_origin(request, settings)
+    display_name = payload.display_name or f"Guest {secrets.token_hex(2).upper()}"
+    token, user_id, _guest_session_id = create_guest_access_token(
+        display_name, settings
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return AuthResponse(
+        access_token=token,
+        expires_in=settings.guest_session_ttl_seconds,
+        user=UserResponse(
+            id=user_id,
+            display_name=display_name,
+            username=None,
+            avatar_url=None,
+            email=None,
+            email_verified=False,
+            account_type="guest",
         ),
     )
 

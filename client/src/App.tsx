@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Client, type Room } from "@colyseus/sdk";
 import {
   type CardColor,
@@ -10,8 +10,14 @@ import {
 } from "@ngame/shared";
 
 import {
+  clearGuestReconnectionToken,
+  clearGuestSession,
+  createGuestSession,
+  guestReconnectionToken,
   logout,
   refresh,
+  restoreGuestSession,
+  saveGuestReconnectionToken,
   startGoogleLogin,
   updateProfile,
   type AuthResponse,
@@ -67,6 +73,8 @@ function errorText(error: unknown): string {
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [guestLoading, setGuestLoading] = useState(false);
   const [desiredPlayers, setDesiredPlayers] = useState(3);
   const [roomCode, setRoomCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
@@ -85,6 +93,7 @@ export function App() {
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<SettingsSaveStatus>("synced");
   const [clockNow, setClockNow] = useState(Date.now());
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
+  const guestRestoreAttempted = useRef(false);
 
   const game = state?.game ?? null;
   const roomPlayer = state?.players.find((player) => player.id === auth?.user.id);
@@ -136,7 +145,9 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    if (window.location.pathname === "/auth/callback") {
+    const isGoogleCallback = window.location.pathname === "/auth/callback";
+    if (isGoogleCallback) {
+      clearGuestSession();
       const oauthError = new URLSearchParams(window.location.search).get("error");
       if (oauthError === "identity_conflict") {
         setError("That email is already linked to another sign-in method.");
@@ -144,6 +155,16 @@ export function App() {
         setError("Google sign-in was cancelled or could not be completed.");
       }
       window.history.replaceState({}, document.title, "/");
+    }
+    if (!isGoogleCallback) {
+      const guestSession = restoreGuestSession();
+      if (guestSession !== null) {
+        setAuth(guestSession);
+        setAuthReady(true);
+        return () => {
+          active = false;
+        };
+      }
     }
     void refresh()
       .then((session) => {
@@ -157,6 +178,42 @@ export function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !authReady ||
+      auth?.user.account_type !== "guest" ||
+      room !== null ||
+      guestRestoreAttempted.current
+    ) {
+      return;
+    }
+    guestRestoreAttempted.current = true;
+    const reconnectionToken = guestReconnectionToken();
+    if (reconnectionToken === null) return;
+
+    let active = true;
+    setConnectionStatus("reconnecting");
+    const client = new Client(REALTIME_URL);
+    client.auth.token = auth.access_token;
+    void client.reconnect(reconnectionToken)
+      .then((reconnected) => {
+        if (!active) {
+          void reconnected.leave(false);
+          return;
+        }
+        attachRoom(reconnected, auth);
+      })
+      .catch((caught) => {
+        if (!active) return;
+        clearGuestReconnectionToken();
+        setConnectionStatus("disconnected");
+        setError(`Guest match could not be restored: ${errorText(caught)}`);
+      });
+    return () => {
+      active = false;
+    };
+  }, [auth, authReady, room]);
 
   useEffect(() => {
     setGuess((current) => ({
@@ -190,10 +247,18 @@ export function App() {
     return () => window.removeEventListener("keydown", closeRulesOnEscape);
   }, [rulesOpen]);
 
-  function attachRoom(joined: Room): void {
+  function attachRoom(joined: Room, session: AuthResponse): void {
+    let lastStatus: StateEnvelope["status"] | null = null;
+    if (session.user.account_type === "guest") {
+      saveGuestReconnectionToken(joined.reconnectionToken);
+    }
     joined.onMessage("state", (message: StateEnvelope) => {
+      lastStatus = message.status;
       setServerClockOffsetMs(message.serverTimeMs - Date.now());
       setState(message);
+      if (session.user.account_type === "guest" && message.status === "finished") {
+        clearGuestSession();
+      }
     });
     joined.onMessage("error", (message: RoomErrorMessage) => {
       setError(`${message.code}: ${message.message}`);
@@ -208,10 +273,21 @@ export function App() {
     });
     joined.onDrop(() => setConnectionStatus("reconnecting"));
     joined.onReconnect(() => {
+      if (session.user.account_type === "guest") {
+        saveGuestReconnectionToken(joined.reconnectionToken);
+      }
       setConnectionStatus("connected");
       joined.send("sync");
     });
     joined.onLeave(() => {
+      clearGuestReconnectionToken();
+      if (
+        session.user.account_type === "guest" &&
+        lastStatus !== null &&
+        lastStatus !== "waiting"
+      ) {
+        clearGuestSession();
+      }
       setConnectionStatus("disconnected");
       setRoom(null);
       setState(null);
@@ -232,7 +308,7 @@ export function App() {
     setError(null);
     setConnectionStatus("connecting");
     try {
-      const currentSession = await refresh();
+      const currentSession = auth.user.account_type === "guest" ? auth : await refresh();
       setAuth(currentSession);
       const client = new Client(REALTIME_URL);
       client.auth.token = currentSession.access_token;
@@ -260,7 +336,7 @@ export function App() {
         }
         joined = await client.joinById(lookup.roomId);
       }
-      attachRoom(joined);
+      attachRoom(joined, currentSession);
     } catch (caught) {
       setConnectionStatus("disconnected");
       setError(errorText(caught));
@@ -271,12 +347,32 @@ export function App() {
     setError(null);
     try {
       if (room !== null) await room.leave(true);
-      await logout();
+      if (auth?.user.account_type === "registered") {
+        await logout();
+      } else {
+        clearGuestSession();
+      }
       setRoom(null);
       setState(null);
+      setProfileOpen(false);
       setAuth(null);
     } catch (caught) {
       setError(errorText(caught));
+    }
+  }
+
+  async function continueAsGuest(): Promise<void> {
+    setGuestLoading(true);
+    setError(null);
+    try {
+      const session = await createGuestSession(guestName);
+      guestRestoreAttempted.current = true;
+      setProfileOpen(false);
+      setAuth(session);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setGuestLoading(false);
     }
   }
 
@@ -350,8 +446,31 @@ export function App() {
           <button className="google-button" onClick={startGoogleLogin}>
             Continue with Google
           </button>
+          <div className="auth-divider"><span>or play one match</span></div>
+          <form
+            className="guest-login-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void continueAsGuest();
+            }}
+          >
+            <label htmlFor="guest-display-name">Guest display name</label>
+            <div>
+              <input
+                id="guest-display-name"
+                maxLength={32}
+                value={guestName}
+                onChange={(event) => setGuestName(event.target.value)}
+                placeholder="Optional — we can generate one"
+                autoComplete="nickname"
+              />
+              <button className="guest-button" type="submit" disabled={guestLoading}>
+                {guestLoading ? "Creating…" : "Continue as Guest"}
+              </button>
+            </div>
+          </form>
           <small className="auth-note">
-            NGAME uses Google only. Your password is never handled by this service.
+            Google creates a persistent profile. Guest access lasts for one match and is not saved as an account.
           </small>
         </section>
       </main>
@@ -388,9 +507,9 @@ export function App() {
             <span>{auth.user.display_name.slice(0, 1).toUpperCase()}</span>
             <div>
               <strong>{auth.user.display_name}</strong>
-              <small>{auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small>
+              <small>{auth.user.account_type === "guest" ? "Guest · one match" : auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small>
             </div>
-            <button type="button" onClick={openProfile}>Profile</button>
+            {auth.user.account_type === "registered" && <button type="button" onClick={openProfile}>Profile</button>}
             <button type="button" onClick={() => void signOut()}>Sign out</button>
           </div>
         </div>

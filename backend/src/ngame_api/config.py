@@ -27,12 +27,14 @@ class Settings(BaseSettings):
     jwt_issuer: str = "http://localhost:8000"
     jwt_audience: str = "ngame"
     access_token_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    guest_session_ttl_seconds: int = Field(default=21600, ge=900, le=43200)
     refresh_token_ttl_days: int = Field(default=30, ge=1, le=180)
     refresh_cookie_name: str = "ngame_refresh"
     cookie_secure: bool = False
 
     oauth_state_secret: str = "replace-this-development-oauth-state-secret"
     google_auth_enabled: bool = False
+    guest_auth_enabled: bool = True
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"

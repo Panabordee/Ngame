@@ -9,10 +9,15 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { createJwtAuthenticator, type Authenticator } from "./auth.ts";
 import { CipherDeckRoom, type RoomMetadata } from "./CipherDeckRoom.ts";
 import { loadServerConfig, type ServerConfig } from "./config.ts";
+import {
+  InMemoryGuestSessionRegistry,
+  type GuestSessionRegistry,
+} from "./guestSessions.ts";
 
 export function createGameServer(
   config: ServerConfig = loadServerConfig(),
   authenticator: Authenticator = createJwtAuthenticator(config),
+  guestSessions: GuestSessionRegistry = new InMemoryGuestSessionRegistry(),
 ) {
   const allowedOrigins = new Set(config.corsAllowedOrigins);
   matchMaker.controller.getCorsHeaders = (headers) => {
@@ -23,6 +28,7 @@ export function createGameServer(
     };
   };
   CipherDeckRoom.authenticator = authenticator;
+  CipherDeckRoom.guestSessions = guestSessions;
   CipherDeckRoom.runtimeConfig = {
     reconnectSeconds: config.reconnectSeconds,
     maxMessagesPerSecond: config.maxMessagesPerSecond,

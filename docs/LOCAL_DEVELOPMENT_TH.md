@@ -37,6 +37,8 @@ export FRONTEND_PUBLIC_URL=http://localhost:5173
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
 export COOKIE_SECURE=false
 export GOOGLE_AUTH_ENABLED=true
+export GUEST_AUTH_ENABLED=true
+export GUEST_SESSION_TTL_SECONDS=21600
 export GOOGLE_CLIENT_ID='your-google-client-id'
 export GOOGLE_CLIENT_SECRET='your-google-client-secret'
 export GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
@@ -62,7 +64,7 @@ export VITE_REALTIME_URL=http://localhost:2567
 npm run dev --workspace @ngame/client
 ```
 
-เปิด `http://localhost:5173` แล้ว Sign in with Google ใช้ browser profile และ Google account แยกกันเพื่อทดสอบผู้เล่น 3–6 คน
+เปิด `http://localhost:5173` ใช้ Google สำหรับ profile ถาวรหรือ Guest สำหรับหนึ่งเกม แต่ละแท็บสร้าง Guest แยกกันได้เพราะ credential เก็บใน `sessionStorage` ของแท็บ
 
 ## ตรวจระบบ
 

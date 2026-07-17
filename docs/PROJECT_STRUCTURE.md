@@ -24,6 +24,7 @@
 - `shared/src/protocol.ts`: message and state-envelope contracts shared by browser and realtime server.
 - `server/src/CipherDeckRoom.ts`: authenticated room lifecycle and network-to-engine adapter.
 - `server/src/auth.ts`: RS256 access-token verification.
+- `server/src/guestSessions.ts`: one-match Guest reservation/commit registry for the single realtime instance.
 - `backend/src/ngame_api/routers/auth.py`: browser authentication endpoints.
 - `backend/src/ngame_api/services.py`: Google identity, access token, and refresh-session logic.
 - `client/src/App.tsx`: authenticated lobby, room-code flow, and match controls.

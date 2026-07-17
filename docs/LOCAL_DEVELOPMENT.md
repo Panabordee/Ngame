@@ -37,6 +37,8 @@ export FRONTEND_PUBLIC_URL=http://localhost:5173
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
 export COOKIE_SECURE=false
 export GOOGLE_AUTH_ENABLED=true
+export GUEST_AUTH_ENABLED=true
+export GUEST_SESSION_TTL_SECONDS=21600
 export GOOGLE_CLIENT_ID='your-google-client-id'
 export GOOGLE_CLIENT_SECRET='your-google-client-secret'
 export GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
@@ -62,7 +64,7 @@ export VITE_REALTIME_URL=http://localhost:2567
 npm run dev --workspace @ngame/client
 ```
 
-Open `http://localhost:5173` and sign in with Google. Use separate browser profiles and Google accounts to test 3–6 players.
+Open `http://localhost:5173`. Sign in with Google for a persistent profile or use Guest for one match. Separate tabs can use separate Guest identities because credentials are stored in per-tab `sessionStorage`.
 
 ## Verify
 
