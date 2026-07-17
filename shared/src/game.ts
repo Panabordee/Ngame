@@ -87,6 +87,7 @@ export function createInitialGame(playerIds: readonly string[], shuffledDeck: re
     phase: "draw",
     pendingDraw: null,
     drawnCardId: null,
+    correctGuessesThisTurn: 0,
     winnerId: null,
     turn: 1,
   };
@@ -127,7 +128,27 @@ export function drawCard(state: GameState, actorId: string): GameState {
     throw new RuleViolation("INVALID_DECK", "The draw pile is empty.");
   }
   next.pendingDraw = drawn;
-  next.phase = "insert";
+  next.drawnCardId = drawn.id;
+  next.correctGuessesThisTurn = 0;
+  next.phase = "guess";
+  return next;
+}
+
+export function stopGuessingAndPlace(state: GameState, actorId: string): GameState {
+  assertActor(state, actorId);
+  if (
+    state.phase !== "guess" ||
+    state.pendingDraw === null ||
+    state.correctGuessesThisTurn < 1
+  ) {
+    throw new RuleViolation(
+      "WRONG_PHASE",
+      "A player may stop and place only after a correct guess with a pending card.",
+    );
+  }
+
+  const next = cloneState(state);
+  next.phase = "place";
   return next;
 }
 
@@ -137,10 +158,13 @@ export function insertDrawnCard(
   rackIndex: number,
 ): GameState {
   assertActor(state, actorId);
-  if (state.phase !== "insert" || state.pendingDraw === null) {
+  if (
+    (state.phase !== "place" && state.phase !== "penalty-place") ||
+    state.pendingDraw === null
+  ) {
     throw new RuleViolation(
       "WRONG_PHASE",
-      "A drawn card can only be inserted during the insert phase.",
+      "A drawn card can only be inserted during a placement phase.",
     );
   }
 
@@ -150,7 +174,10 @@ export function insertDrawnCard(
   actor.rack = insertCard(actor.rack, drawn, rackIndex);
   next.pendingDraw = null;
   next.drawnCardId = drawn.id;
-  next.phase = "guess";
+  updateEndGame(next);
+  if (next.phase !== "game-over") {
+    advanceTurn(next);
+  }
   return next;
 }
 
@@ -174,6 +201,7 @@ function advanceTurn(state: GameState): void {
       state.phase = state.drawPile.length > 0 ? "draw" : "guess";
       state.drawnCardId = null;
       state.pendingDraw = null;
+      state.correctGuessesThisTurn = 0;
       state.turn += 1;
       return;
     }
@@ -191,7 +219,6 @@ export function resolveGuess(state: GameState, action: GuessAction): GuessResolu
   }
 
   const next = cloneState(state);
-  const actor = currentPlayer(next);
   const targetPlayer = next.players.find((player) => player.id === action.targetPlayerId);
   if (targetPlayer === undefined || targetPlayer.eliminated) {
     throw new RuleViolation("INVALID_TARGET", "The target player is not active.");
@@ -206,39 +233,25 @@ export function resolveGuess(state: GameState, action: GuessAction): GuessResolu
       : action.guess.kind === "standard" &&
         targetCard.rank === action.guess.rank &&
         targetCard.color === action.guess.color;
-  let revealedCardId: string;
+  let revealedCardId: string | null = null;
 
   if (correct) {
     targetCard.revealed = true;
     revealedCardId = targetCard.id;
     updateEndGame(next);
-  } else if (next.drawnCardId !== null) {
-    const penaltyCard = actor.rack.find((card) => card.id === next.drawnCardId);
-    if (penaltyCard === undefined) {
-      throw new RuleViolation("INVALID_CARD_ID", "The drawn penalty card is missing.");
-    }
-    penaltyCard.revealed = true;
-    revealedCardId = penaltyCard.id;
-    updateEndGame(next);
     if (next.phase !== "game-over") {
-      advanceTurn(next);
+      if (next.pendingDraw !== null) {
+        next.correctGuessesThisTurn += 1;
+      } else {
+        advanceTurn(next);
+      }
     }
+  } else if (next.pendingDraw !== null) {
+    next.pendingDraw.revealed = true;
+    revealedCardId = next.pendingDraw.id;
+    next.phase = "penalty-place";
   } else {
-    const penaltyCard = actor.rack.find(
-      (card) => card.id === action.selfRevealCardId && !card.revealed,
-    );
-    if (penaltyCard === undefined) {
-      throw new RuleViolation(
-        "INVALID_TARGET",
-        "An empty-pile wrong guess requires an unrevealed self-penalty card.",
-      );
-    }
-    penaltyCard.revealed = true;
-    revealedCardId = penaltyCard.id;
-    updateEndGame(next);
-    if (next.phase !== "game-over") {
-      advanceTurn(next);
-    }
+    next.phase = "self-penalty";
   }
 
   const nextPlayerId = next.phase === "game-over" ? null : currentPlayer(next).id;
@@ -250,6 +263,36 @@ export function resolveGuess(state: GameState, action: GuessAction): GuessResolu
     gameOver: next.phase === "game-over",
     winnerId: next.winnerId,
   };
+}
+
+export function revealSelfPenalty(
+  state: GameState,
+  actorId: string,
+  cardId: string,
+): GameState {
+  assertActor(state, actorId);
+  if (state.phase !== "self-penalty" || state.pendingDraw !== null) {
+    throw new RuleViolation(
+      "WRONG_PHASE",
+      "A self-penalty card can only be revealed after a wrong empty-pile guess.",
+    );
+  }
+
+  const next = cloneState(state);
+  const actor = currentPlayer(next);
+  const penaltyCard = actor.rack.find((card) => card.id === cardId && !card.revealed);
+  if (penaltyCard === undefined) {
+    throw new RuleViolation(
+      "INVALID_TARGET",
+      "The self-penalty must be one of the active player's unrevealed cards.",
+    );
+  }
+  penaltyCard.revealed = true;
+  updateEndGame(next);
+  if (next.phase !== "game-over") {
+    advanceTurn(next);
+  }
+  return next;
 }
 
 export function forfeitPlayer(state: GameState, playerId: string): GameState {

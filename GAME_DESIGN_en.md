@@ -11,15 +11,17 @@
   - The last player receives `base - 1` cards.
   - Every other player receives the base hand size. The +1/-1 adjustment keeps the total dealt unchanged.
 - Players see their own rack fully, but only see the *revealed* cards of opponents.
-- On your turn, draw one new card while the draw pile is not empty, insert it into a valid rack position (face-down to opponents), then guess one opponent card. Guess a standard card by rank and color, or guess a Joker by declaring `JOKER` without a color.
-  - Correct guess → that card is permanently revealed, and you **guess again** (same or a different target).
-  - Wrong guess after drawing → the newly drawn card is permanently revealed in its correctly sorted rack position, and the turn ends immediately.
-  - Wrong guess when the draw pile is empty → choose one of your own unrevealed cards to reveal permanently, and the turn ends immediately.
+- While the draw pile contains cards, draw one card and keep it outside the rack while guessing. The player must make at least one guess before that card can be placed. Guess a standard card by rank and color, or guess a Joker by declaring `JOKER` without a color.
+  - Correct guess → that target is permanently revealed. The player may guess again or stop. If they stop, they choose one server-approved rack position for the pending card; it stays face-down, and the turn ends.
+  - Wrong guess → reveal the pending drawn card, let the player choose one server-approved rack position for it, then end the turn. The target of the wrong guess stays hidden.
+  - The server must validate placement. Standard cards may use only positions that preserve rank order and red-before-black order. A Joker may use any position. Equivalent cards can produce more than one valid position.
+- When the draw pile is empty, the player must make exactly one guess. A correct guess reveals the target and ends the turn safely. A wrong guess moves to a penalty choice: the player selects one of their own unrevealed cards to reveal, then the turn ends.
 - Jokers are Cipher cards: they may occupy any rack position and are guessed by declaring `JOKER` without a color. A correct Joker guess reveals only the targeted Joker and follows the same extra-guess rule as any other correct guess.
 - A player loses when every card in their own rack has been revealed. The last active player wins.
 
 ## 2. Lobby and Reconnection
 - A room is created with a fixed `desiredPlayers` value from 3–6 and starts automatically when that many authenticated players have joined.
+- Public rooms are available through Quick Match. Private/code rooms receive a unique server-generated six-digit room code, are excluded from Quick Match, and can be joined by entering that code.
 - Lock the room when the match starts; do not allow mid-match joins.
 - Pause all game actions when a connected player drops and allow 30 seconds for reconnection.
 - If the player does not reconnect in time, permanently reveal every card in their rack and eliminate them by forfeit. If they had drawn a card but had not inserted it yet, insert and reveal it before resolving the forfeit so no card disappears from authoritative state.

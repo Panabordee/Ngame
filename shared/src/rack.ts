@@ -62,3 +62,11 @@ export function insertCard(rack: readonly Card[], card: Card, index: number): Ca
   }
   return nextRack;
 }
+
+export function validInsertionIndexes(rack: readonly Card[], card: Card): number[] {
+  return Array.from({ length: rack.length + 1 }, (_, index) => index).filter((index) => {
+    const candidate = structuredClone(rack) as Card[];
+    candidate.splice(index, 0, structuredClone(card) as Card);
+    return isValidRackOrder(candidate);
+  });
+}

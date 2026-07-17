@@ -34,7 +34,10 @@ async function registerPlayer(index: number): Promise<RegisteredUser> {
 async function joinPlayer(player: RegisteredUser): Promise<Room> {
   const client = new Client(realtimeUrl);
   client.auth.token = player.accessToken;
-  const room = await client.joinOrCreate("cipher_deck", { desiredPlayers: 3 });
+  const room = await client.joinOrCreate("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "public",
+  });
   room.onMessage("state", () => undefined);
   return room;
 }
@@ -62,6 +65,7 @@ assert.equal(healthResponses.every((response) => response.ok), true);
 
 const players = await Promise.all([1, 2, 3].map(registerPlayer));
 const rooms: Room[] = [];
+let codeRoom: Room | null = null;
 try {
   for (const player of players) {
     rooms.push(await joinPlayer(player));
@@ -93,7 +97,7 @@ try {
       reject(new Error("Timed out waiting for the draw transition."));
     }, 3_000);
     const unsubscribe = activeRoom.onMessage<StateEnvelope>("state", (state) => {
-      if (state.game?.phase === "insert") {
+      if (state.game?.phase === "guess" && state.game.pendingDraw !== null) {
         clearTimeout(timeout);
         unsubscribe();
         resolve(state);
@@ -101,7 +105,24 @@ try {
     });
   });
   activeRoom.send("draw");
-  assert.equal((await drewState).game?.phase, "insert");
+  assert.equal((await drewState).game?.phase, "guess");
+
+  const codeClient = new Client(realtimeUrl);
+  codeClient.auth.token = players[0]?.accessToken ?? "";
+  codeRoom = await codeClient.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "code",
+  });
+  codeRoom.onMessage("state", () => undefined);
+  const codeState = await requestState(codeRoom);
+  assert.equal(codeState.lobbyMode, "code");
+  assert.match(codeState.roomCode ?? "", /^\d{6}$/);
+  const codeLookupResponse = await fetch(
+    `${realtimeUrl}/rooms/by-code/${codeState.roomCode}`,
+  );
+  assert.equal(codeLookupResponse.ok, true);
+  const codeLookup = (await codeLookupResponse.json()) as { roomId: string };
+  assert.equal(codeLookup.roomId, codeRoom.roomId);
 
   process.stdout.write(
     `${JSON.stringify({
@@ -109,10 +130,14 @@ try {
       apiUrl,
       realtimeUrl,
       roomId: rooms[0]?.roomId,
+      roomCode: codeState.roomCode,
       players: players.map((player) => player.userId),
-      verified: ["auth", "matchmaking", "privacy", "draw"],
+      verified: ["auth", "matchmaking", "privacy", "draw", "room-code"],
     }, null, 2)}\n`,
   );
 } finally {
-  await Promise.all(rooms.map((room) => room.leave(true)));
+  await Promise.all([
+    ...rooms.map((room) => room.leave(true)),
+    ...(codeRoom === null ? [] : [codeRoom.leave(true)]),
+  ]);
 }

@@ -67,7 +67,9 @@ summary:focus-visible {
 .danger-button,
 .google-button,
 .guess-button,
-.draw-button {
+.draw-button,
+.stop-button,
+.penalty-button {
   border: 0;
   border-radius: 4px;
   cursor: pointer;
@@ -81,7 +83,9 @@ summary:focus-visible {
 .danger-button:hover,
 .google-button:hover,
 .guess-button:hover:not(:disabled),
-.draw-button:hover:not(:disabled) {
+.draw-button:hover:not(:disabled),
+.stop-button:hover:not(:disabled),
+.penalty-button:hover:not(:disabled) {
   filter: brightness(1.12);
   transform: translateY(-1px);
 }
@@ -431,7 +435,53 @@ summary:focus-visible {
   background: rgba(201, 133, 69, 0.12);
 }
 
-.join-button { width: 100%; }
+.lobby-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lobby-actions button:disabled,
+.room-code-join button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.room-code-join {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #2d4039;
+}
+
+.room-code-join label {
+  color: var(--copper);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.room-code-join > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.room-code-join input {
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid #385049;
+  border-radius: 4px;
+  color: var(--gold);
+  background: #0a1411;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-align: center;
+}
 
 .rules-glance {
   padding: 10px 0;
@@ -491,6 +541,36 @@ summary:focus-visible {
 
 .match-toolbar p { margin: 0; color: var(--muted); }
 .toolbar-actions { display: flex; gap: 8px; }
+
+.room-code-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.room-code-display span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.room-code-display strong {
+  color: var(--gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.35rem;
+  letter-spacing: 0.2em;
+}
+
+.room-code-display button {
+  padding: 5px 8px;
+  border: 1px solid #385049;
+  border-radius: 4px;
+  color: var(--muted);
+  background: #101c18;
+  cursor: pointer;
+}
 
 .game-table {
   position: relative;
@@ -768,6 +848,7 @@ summary:focus-visible {
 }
 
 .insert-slot:hover { background: rgba(223, 186, 112, 0.18); }
+.insert-slot-spacer { flex: 0 0 8px; }
 .seat-hint { margin: 2px 0 0; color: var(--gold); font-size: 0.72rem; text-align: center; }
 
 .control-dock {
@@ -797,7 +878,30 @@ summary:focus-visible {
 }
 
 .draw-button:disabled,
-.guess-button:disabled { cursor: not-allowed; filter: grayscale(0.8); opacity: 0.35; }
+.guess-button:disabled,
+.stop-button:disabled,
+.penalty-button:disabled { cursor: not-allowed; filter: grayscale(0.8); opacity: 0.35; }
+
+.turn-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(108px, 1fr));
+  gap: 7px;
+}
+
+.stop-button,
+.penalty-button {
+  padding: 10px;
+  border: 1px solid rgba(223, 186, 112, 0.42);
+  color: var(--gold);
+  background: rgba(201, 133, 69, 0.12);
+  font-size: 0.68rem;
+}
+
+.penalty-button {
+  border-color: rgba(216, 93, 84, 0.45);
+  color: #ffaaa3;
+  background: rgba(92, 26, 23, 0.35);
+}
 
 .guess-controls {
   display: grid;

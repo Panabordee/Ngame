@@ -5,6 +5,7 @@ import {
   type GuessMessage,
   type InsertMessage,
   type Rank,
+  type SelfPenaltyMessage,
 } from "@ngame/shared";
 import type { CardGuess } from "@ngame/shared";
 
@@ -44,11 +45,7 @@ export function parseGuessMessage(value: unknown): GuessMessage | null {
   if (
     !isRecord(value) ||
     typeof value.targetPlayerId !== "string" ||
-    typeof value.targetCardId !== "string" ||
-    !(
-      value.selfRevealCardId === null ||
-      typeof value.selfRevealCardId === "string"
-    )
+    typeof value.targetCardId !== "string"
   ) {
     return null;
   }
@@ -60,8 +57,14 @@ export function parseGuessMessage(value: unknown): GuessMessage | null {
     targetPlayerId: value.targetPlayerId,
     targetCardId: value.targetCardId,
     guess,
-    selfRevealCardId: value.selfRevealCardId,
   };
+}
+
+export function parseSelfPenaltyMessage(value: unknown): SelfPenaltyMessage | null {
+  if (!isRecord(value) || typeof value.cardId !== "string" || value.cardId.length === 0) {
+    return null;
+  }
+  return { cardId: value.cardId };
 }
 
 export function toGuessAction(actorId: string, message: GuessMessage): GuessAction {

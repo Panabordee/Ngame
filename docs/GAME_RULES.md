@@ -29,17 +29,17 @@ The first player receives `base + 1`, the last player receives `base - 1`, and e
 
 ## Turn sequence
 
-1. If the draw pile contains cards, draw exactly one card.
-2. Insert it into a legal rack position. A standard card must preserve rank and red-before-black order; a Joker may use any position.
-3. Guess one unrevealed opponent card.
+1. If the draw pile contains cards, draw exactly one card. Keep it outside the rack while guessing.
+2. Guess one unrevealed opponent card before the drawn card can be placed.
 
 A standard guess names rank and color. A Joker guess declares only `JOKER`.
 
-- Correct: reveal the targeted card and keep guessing in the same turn.
-- Wrong after drawing: reveal the card drawn this turn in its inserted position, then end the turn.
-- Wrong after the pile is empty: select and reveal one of your own unrevealed cards, then end the turn.
+- Correct while holding a drawn card: reveal the targeted card, then either guess again or stop. Stopping opens the placement step; choose a legal slot, place the drawn card face-down, and end the turn.
+- Wrong while holding a drawn card: leave the target hidden, reveal the drawn card, choose a legal placement slot, and end the turn.
+- The client offers only legal slots, and the server independently validates the chosen slot. A standard card must preserve rank and red-before-black order; a Joker may use any slot. Equivalent cards may have multiple legal slots.
+- Empty draw pile: each turn contains exactly one forced guess. A correct guess reveals the target and ends the turn safely. A wrong guess opens the self-penalty step; select and reveal one of your own unrevealed cards, then end the turn.
 
-When the draw pile is empty, a new turn begins directly in the guess phase.
+When the draw pile is empty, a new turn begins directly in the forced single-guess phase.
 
 ## Elimination and winner
 
@@ -48,6 +48,7 @@ A player is eliminated as soon as every card in their rack is revealed. The matc
 ## Lobby, disconnect, and forfeit
 
 - A lobby has a fixed target of 3–6 players and is locked after the match starts.
+- Quick Match searches public rooms only. A code room is excluded from Quick Match and gets a unique server-generated six-digit code for direct joining.
 - A dropped connection pauses actions for the whole room for 30 seconds.
 - A successful reconnect resumes the same authenticated player and sends a fresh viewer-safe snapshot.
 - If the timeout expires, all of that player's cards are revealed and the player is eliminated. A pending drawn card is first inserted and revealed so it cannot disappear.

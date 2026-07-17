@@ -1,5 +1,9 @@
 import { Fragment } from "react";
-import type { ClientGameView } from "@ngame/shared";
+import {
+  validInsertionIndexes,
+  type Card,
+  type ClientGameView,
+} from "@ngame/shared";
 
 import { CardView } from "./CardView.tsx";
 
@@ -34,7 +38,21 @@ export function GameTable({
   const opponents = game.players.filter((player) => player.id !== viewerId);
   const isViewerTurn = game.currentPlayerId === viewerId;
   const canTarget = actionsEnabled && isViewerTurn && game.phase === "guess";
-  const canSelectPenalty = canTarget && game.drawPileCount === 0;
+  const canSelectPenalty = actionsEnabled && isViewerTurn && game.phase === "self-penalty";
+  const isPlacing =
+    isViewerTurn && (game.phase === "place" || game.phase === "penalty-place");
+  const visibleRack = viewer?.rack.flatMap((card): Card[] =>
+    card.kind === "hidden" ? [] : [structuredClone(card) as Card],
+  ) ?? [];
+  const pendingCard =
+    game.pendingDraw === null || game.pendingDraw.kind === "hidden"
+      ? null
+      : (structuredClone(game.pendingDraw) as Card);
+  const validSlots = new Set(
+    isPlacing && pendingCard !== null && visibleRack.length === (viewer?.rack.length ?? 0)
+      ? validInsertionIndexes(visibleRack, pendingCard)
+      : [],
+  );
 
   return (
     <section className="game-table" aria-label="CipherDeck table">
@@ -116,19 +134,23 @@ export function GameTable({
             </div>
             <span className="card-count">{viewer.rack.length} cards</span>
           </header>
-          <div className={`rack own-rack ${game.phase === "insert" && isViewerTurn ? "is-inserting" : ""}`}>
-            {game.phase === "insert" && isViewerTurn ? (
+          <div className={`rack own-rack ${isPlacing ? "is-inserting" : ""}`}>
+            {isPlacing ? (
               Array.from({ length: viewer.rack.length + 1 }, (_, rackIndex) => (
                 <Fragment key={`slot-${rackIndex}`}>
-                  <button
-                    type="button"
-                    className="insert-slot"
-                    disabled={!actionsEnabled}
-                    onClick={() => onInsert(rackIndex)}
-                    aria-label={`Insert at position ${rackIndex + 1}`}
-                  >
-                    <span>+</span>
-                  </button>
+                  {validSlots.has(rackIndex) ? (
+                    <button
+                      type="button"
+                      className="insert-slot"
+                      disabled={!actionsEnabled}
+                      onClick={() => onInsert(rackIndex)}
+                      aria-label={`Insert at valid position ${rackIndex + 1}`}
+                    >
+                      <span>+</span>
+                    </button>
+                  ) : (
+                    <span className="insert-slot-spacer" aria-hidden="true" />
+                  )}
                   {viewer.rack[rackIndex] !== undefined && (
                     <CardView
                       card={viewer.rack[rackIndex]}
@@ -154,7 +176,14 @@ export function GameTable({
             )}
           </div>
           {canSelectPenalty && (
-            <p className="seat-hint">Select one of your cards as the wrong-guess penalty.</p>
+            <p className="seat-hint">Select one unrevealed card, then confirm “Reveal selected”.</p>
+          )}
+          {isPlacing && (
+            <p className="seat-hint">
+              {game.phase === "place"
+                ? "Choose a + slot. Your drawn card will stay face-down."
+                : "Wrong guess: choose a + slot for the revealed drawn card."}
+            </p>
           )}
         </article>
       )}

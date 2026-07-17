@@ -43,7 +43,13 @@ export interface PlayerState {
   eliminated: boolean;
 }
 
-export type TurnPhase = "draw" | "insert" | "guess" | "game-over";
+export type TurnPhase =
+  | "draw"
+  | "guess"
+  | "place"
+  | "penalty-place"
+  | "self-penalty"
+  | "game-over";
 
 export interface GameState {
   readonly version: 1;
@@ -53,6 +59,7 @@ export interface GameState {
   phase: TurnPhase;
   pendingDraw: Card | null;
   drawnCardId: string | null;
+  correctGuessesThisTurn: number;
   winnerId: string | null;
   turn: number;
 }
@@ -74,13 +81,12 @@ export interface GuessAction {
   readonly targetPlayerId: string;
   readonly targetCardId: string;
   readonly guess: CardGuess;
-  readonly selfRevealCardId: string | null;
 }
 
 export interface GuessResolution {
   readonly state: GameState;
   readonly correct: boolean;
-  readonly revealedCardId: string;
+  readonly revealedCardId: string | null;
   readonly nextPlayerId: string | null;
   readonly gameOver: boolean;
   readonly winnerId: string | null;

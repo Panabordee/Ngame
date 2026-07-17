@@ -1,3 +1,9 @@
+import { fileURLToPath } from "node:url";
+
+const DEFAULT_JWT_PUBLIC_KEY_FILE = fileURLToPath(
+  new URL("../../secrets/jwt-public.pem", import.meta.url),
+);
+
 export interface ServerConfig {
   readonly port: number;
   readonly hostname: string;
@@ -23,7 +29,7 @@ export function loadServerConfig(
     port: integerValue(environment.REALTIME_PORT, 2567, "REALTIME_PORT"),
     hostname: environment.REALTIME_HOST ?? "0.0.0.0",
     jwtPublicKeyFile:
-      environment.JWT_PUBLIC_KEY_FILE ?? "secrets/jwt-public.pem",
+      environment.JWT_PUBLIC_KEY_FILE ?? DEFAULT_JWT_PUBLIC_KEY_FILE,
     jwtIssuer: environment.JWT_ISSUER ?? "http://localhost:8000",
     jwtAudience: environment.JWT_AUDIENCE ?? "ngame",
     reconnectSeconds: integerValue(

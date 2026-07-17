@@ -15,10 +15,13 @@ import {
   forfeitPlayer,
   insertDrawnCard,
   projectStateForPlayer,
+  revealSelfPenalty,
   resolveGuess,
   serializeGameState,
+  stopGuessingAndPlace,
   type ClientGameView,
   type GameState,
+  type LobbyMode,
   type RoomErrorMessage,
   type RoomStatus,
   type StateEnvelope,
@@ -29,6 +32,7 @@ import type { ServerConfig } from "./config.ts";
 import {
   parseGuessMessage,
   parseInsertMessage,
+  parseSelfPenaltyMessage,
   toGuessAction,
 } from "./messages.ts";
 
@@ -37,6 +41,8 @@ class PublicRoomState extends Schema {}
 export interface RoomMetadata {
   readonly desiredPlayers: number;
   readonly status: RoomStatus;
+  readonly lobbyMode: LobbyMode;
+  readonly roomCode: string | null;
 }
 
 type CipherClient = Client<{
@@ -49,6 +55,7 @@ type CipherClient = Client<{
 
 interface RoomOptions {
   readonly desiredPlayers?: unknown;
+  readonly lobbyMode?: unknown;
 }
 
 function secureRandom(): number {
@@ -72,8 +79,12 @@ export class CipherDeckRoom extends Room<{
     maxMessagesPerSecond: 20,
   };
 
+  private static readonly activeRoomCodes = new Set<string>();
+
   state = new PublicRoomState();
   private desiredPlayers = 0;
+  private lobbyMode: LobbyMode = "public";
+  private roomCode: string | null = null;
   private game: GameState | null = null;
   private readonly droppedPlayerIds = new Set<string>();
 
@@ -97,10 +108,16 @@ export class CipherDeckRoom extends Room<{
     if (!Number.isSafeInteger(desiredPlayers) || desiredPlayers < 3 || desiredPlayers > 6) {
       throw new ServerError(400, "desiredPlayers must be an integer from 3 to 6.");
     }
+    const lobbyMode = options.lobbyMode ?? "public";
+    if (lobbyMode !== "public" && lobbyMode !== "code") {
+      throw new ServerError(400, "lobbyMode must be either public or code.");
+    }
     this.desiredPlayers = desiredPlayers;
+    this.lobbyMode = lobbyMode;
+    this.roomCode = lobbyMode === "code" ? CipherDeckRoom.reserveRoomCode() : null;
     this.maxClients = desiredPlayers;
     this.maxMessagesPerSecond = CipherDeckRoom.runtimeConfig.maxMessagesPerSecond;
-    await this.setMetadata({ desiredPlayers, status: "waiting" });
+    await this.updateStatus();
 
     this.onMessage("draw", (client) => {
       this.applyAction(client, (game, actorId) => drawCard(game, actorId));
@@ -118,6 +135,9 @@ export class CipherDeckRoom extends Room<{
         insertDrawnCard(game, actorId, message.rackIndex),
       );
     });
+    this.onMessage("stop", (client) => {
+      this.applyAction(client, (game, actorId) => stopGuessingAndPlace(game, actorId));
+    });
     this.onMessage("guess", (client, payload: unknown) => {
       const message = parseGuessMessage(payload);
       if (message === null) {
@@ -129,6 +149,22 @@ export class CipherDeckRoom extends Room<{
         (game, actorId) => resolveGuess(game, toGuessAction(actorId, message)).state,
       );
     });
+    this.onMessage("self-penalty", (client, payload: unknown) => {
+      const message = parseSelfPenaltyMessage(payload);
+      if (message === null) {
+        this.sendError(client, "INVALID_MESSAGE", "Invalid self-penalty message.");
+        return;
+      }
+      this.applyAction(client, (game, actorId) =>
+        revealSelfPenalty(game, actorId, message.cardId),
+      );
+    });
+  }
+
+  onDispose(): void {
+    if (this.roomCode !== null) {
+      CipherDeckRoom.activeRoomCodes.delete(this.roomCode);
+    }
   }
 
   async onJoin(client: CipherClient): Promise<void> {
@@ -150,7 +186,11 @@ export class CipherDeckRoom extends Room<{
   }
 
   async onDrop(client: CipherClient): Promise<void> {
-    if (this.game === null || this.isEliminated(this.userId(client))) {
+    if (
+      this.game === null ||
+      this.game.phase === "game-over" ||
+      this.isEliminated(this.userId(client))
+    ) {
       return;
     }
     const userId = this.userId(client);
@@ -175,7 +215,7 @@ export class CipherDeckRoom extends Room<{
   }
 
   async onLeave(client: CipherClient): Promise<void> {
-    if (this.game === null) {
+    if (this.game === null || this.game.phase === "game-over") {
       this.broadcastState();
       return;
     }
@@ -190,7 +230,11 @@ export class CipherDeckRoom extends Room<{
   }
 
   forfeitDisconnectedPlayer(userId: string): void {
-    if (this.game === null || this.isEliminated(userId)) {
+    if (
+      this.game === null ||
+      this.game.phase === "game-over" ||
+      this.isEliminated(userId)
+    ) {
       return;
     }
     this.game = forfeitPlayer(this.game, userId);
@@ -246,6 +290,8 @@ export class CipherDeckRoom extends Room<{
     client.send("state", {
       status: this.roomStatus(),
       desiredPlayers: this.desiredPlayers,
+      lobbyMode: this.lobbyMode,
+      roomCode: this.roomCode,
       connectedPlayers: this.clients.length,
       droppedPlayerIds: [...this.droppedPlayerIds],
       game: this.game === null ? null : projectStateForPlayer(this.game, userId),
@@ -281,6 +327,22 @@ export class CipherDeckRoom extends Room<{
   }
 
   private async updateStatus(): Promise<void> {
-    await this.setMetadata({ status: this.roomStatus() });
+    await this.setMetadata({
+      desiredPlayers: this.desiredPlayers,
+      status: this.roomStatus(),
+      lobbyMode: this.lobbyMode,
+      roomCode: this.roomCode,
+    });
+  }
+
+  private static reserveRoomCode(): string {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const roomCode = randomInt(100_000, 1_000_000).toString();
+      if (!CipherDeckRoom.activeRoomCodes.has(roomCode)) {
+        CipherDeckRoom.activeRoomCodes.add(roomCode);
+        return roomCode;
+      }
+    }
+    throw new ServerError(503, "Unable to allocate a room code. Please try again.");
   }
 }

@@ -2,10 +2,13 @@ import type { CardGuess } from "./types.ts";
 import type { ClientGameView } from "./view.ts";
 
 export type RoomStatus = "waiting" | "playing" | "paused" | "finished";
+export type LobbyMode = "public" | "code";
 
 export interface StateEnvelope {
   readonly status: RoomStatus;
   readonly desiredPlayers: number;
+  readonly lobbyMode: LobbyMode;
+  readonly roomCode: string | null;
   readonly connectedPlayers: number;
   readonly droppedPlayerIds: readonly string[];
   readonly game: ClientGameView | null;
@@ -24,5 +27,8 @@ export interface GuessMessage {
   readonly targetPlayerId: string;
   readonly targetCardId: string;
   readonly guess: CardGuess;
-  readonly selfRevealCardId: string | null;
+}
+
+export interface SelfPenaltyMessage {
+  readonly cardId: string;
 }

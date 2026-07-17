@@ -26,7 +26,6 @@ interface GuessForm {
   kind: "standard" | "joker";
   rank: Rank;
   color: CardColor;
-  selfRevealCardId: string;
 }
 
 const INITIAL_GUESS: GuessForm = {
@@ -35,8 +34,13 @@ const INITIAL_GUESS: GuessForm = {
   kind: "standard",
   rank: "A",
   color: "red",
-  selfRevealCardId: "",
 };
+
+type JoinMode = "quick" | "create-code" | "join-code";
+
+function realtimeHttpUrl(): string {
+  return REALTIME_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/$/, "");
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error.";
@@ -49,24 +53,37 @@ export function App() {
   const [password, setPassword] = useState("local-password-123");
   const [displayName, setDisplayName] = useState("Player 1");
   const [desiredPlayers, setDesiredPlayers] = useState(3);
+  const [roomCode, setRoomCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [state, setState] = useState<StateEnvelope | null>(null);
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [guess, setGuess] = useState<GuessForm>(INITIAL_GUESS);
+  const [selectedPenaltyCardId, setSelectedPenaltyCardId] = useState("");
 
   const prettyState = useMemo(() => JSON.stringify(state, null, 2), [state]);
   const game = state?.game ?? null;
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
   const canDraw = room !== null && isMyTurn && game?.phase === "draw" && state?.status === "playing";
-  const needsPenalty = game?.drawPileCount === 0;
   const canGuess =
     room !== null &&
     isMyTurn &&
     game?.phase === "guess" &&
     guess.targetPlayerId.length > 0 &&
     guess.targetCardId.length > 0 &&
-    (!needsPenalty || guess.selfRevealCardId.length > 0) &&
+    state?.status === "playing";
+  const canStopAndPlace =
+    room !== null &&
+    isMyTurn &&
+    game?.phase === "guess" &&
+    game.pendingDraw !== null &&
+    game.correctGuessesThisTurn > 0 &&
+    state?.status === "playing";
+  const canRevealPenalty =
+    room !== null &&
+    isMyTurn &&
+    game?.phase === "self-penalty" &&
+    selectedPenaltyCardId.length > 0 &&
     state?.status === "playing";
 
   useEffect(() => {
@@ -89,8 +106,8 @@ export function App() {
       ...current,
       targetPlayerId: "",
       targetCardId: "",
-      selfRevealCardId: "",
     }));
+    setSelectedPenaltyCardId("");
   }, [game?.turn]);
 
   async function submitAuth(mode: "login" | "register"): Promise<void> {
@@ -106,31 +123,63 @@ export function App() {
     }
   }
 
-  async function joinRoom(): Promise<void> {
+  function attachRoom(joined: Room): void {
+    joined.onMessage("state", (message: StateEnvelope) => setState(message));
+    joined.onMessage("error", (message: RoomErrorMessage) => {
+      setError(`${message.code}: ${message.message}`);
+    });
+    joined.onDrop(() => setConnectionStatus("reconnecting"));
+    joined.onReconnect(() => {
+      setConnectionStatus("connected");
+      joined.send("sync");
+    });
+    joined.onLeave(() => {
+      setConnectionStatus("disconnected");
+      setRoom(null);
+      setState(null);
+    });
+    setRoom(joined);
+    setConnectionStatus("connected");
+    joined.send("sync");
+  }
+
+  async function joinRoom(mode: JoinMode): Promise<void> {
     if (auth === null) return;
+    const normalizedCode = roomCode.trim();
+    if (mode === "join-code" && !/^\d{6}$/.test(normalizedCode)) {
+      setError("Room code must contain exactly six digits.");
+      return;
+    }
     setError(null);
     setConnectionStatus("connecting");
     try {
       const client = new Client(REALTIME_URL);
       client.auth.token = auth.access_token;
-      const joined = await client.joinOrCreate("cipher_deck", { desiredPlayers });
-      joined.onMessage("state", (message: StateEnvelope) => setState(message));
-      joined.onMessage("error", (message: RoomErrorMessage) => {
-        setError(`${message.code}: ${message.message}`);
-      });
-      joined.onDrop(() => setConnectionStatus("reconnecting"));
-      joined.onReconnect(() => {
-        setConnectionStatus("connected");
-        joined.send("sync");
-      });
-      joined.onLeave(() => {
-        setConnectionStatus("disconnected");
-        setRoom(null);
-        setState(null);
-      });
-      setRoom(joined);
-      setConnectionStatus("connected");
-      joined.send("sync");
+      let joined: Room;
+      if (mode === "quick") {
+        joined = await client.joinOrCreate("cipher_deck", {
+          desiredPlayers,
+          lobbyMode: "public",
+        });
+      } else if (mode === "create-code") {
+        joined = await client.create("cipher_deck", {
+          desiredPlayers,
+          lobbyMode: "code",
+        });
+      } else {
+        const lookupResponse = await fetch(
+          `${realtimeHttpUrl()}/rooms/by-code/${normalizedCode}`,
+        );
+        const lookup = (await lookupResponse.json()) as {
+          roomId?: string;
+          detail?: string;
+        };
+        if (!lookupResponse.ok || lookup.roomId === undefined) {
+          throw new Error(lookup.detail ?? "Room code was not found.");
+        }
+        joined = await client.joinById(lookup.roomId);
+      }
+      attachRoom(joined);
     } catch (caught) {
       setConnectionStatus("disconnected");
       setError(errorText(caught));
@@ -159,7 +208,6 @@ export function App() {
         guess.kind === "joker"
           ? { kind: "joker" }
           : { kind: "standard", rank: guess.rank, color: guess.color },
-      selfRevealCardId: guess.selfRevealCardId || null,
     });
     setGuess((current) => ({ ...current, targetPlayerId: "", targetCardId: "" }));
   }
@@ -234,20 +282,44 @@ export function App() {
                 </button>
               ))}
             </div>
-            <button className="primary-button join-button" onClick={() => void joinRoom()}>Find a table</button>
+            <div className="lobby-actions">
+              <button className="primary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("quick")}>Quick Match</button>
+              <button className="secondary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("create-code")}>Create room code</button>
+            </div>
+            <div className="room-code-join">
+              <label htmlFor="room-code">Join a numbered room</label>
+              <div>
+                <input
+                  id="room-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={roomCode}
+                  onChange={(event) => setRoomCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+                <button className="secondary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("join-code")}>Join code</button>
+              </div>
+            </div>
           </div>
           <aside className="rules-glance">
             <h2>At a glance</h2>
-            <ol><li><span>01</span>Draw and place your card in rank order.</li><li><span>02</span>Read the pattern in an opponent's rack.</li><li><span>03</span>Guess rank + color, or declare JOKER.</li><li><span>04</span>Be the last rack with a secret.</li></ol>
+            <ol><li><span>01</span>Draw a card, then make a mandatory guess before placing it.</li><li><span>02</span>Correct: guess again or stop and place it face-down.</li><li><span>03</span>Wrong: reveal the drawn card and place it in a legal slot.</li><li><span>04</span>When the pile is empty, one guess decides the turn.</li></ol>
           </aside>
         </section>
       ) : (
         <div className="match-layout">
           <section className="match-toolbar">
             <div>
-              <span className="eyebrow">ROOM {room.roomId}</span>
+              <span className="eyebrow">{state?.lobbyMode === "code" ? "NUMBERED ROOM" : "PUBLIC ROOM"}</span>
               <h1>{state?.status === "waiting" ? "Waiting for players" : "Cipher table"}</h1>
               <p>{state === null ? "Synchronizing state…" : `${state.connectedPlayers}/${state.desiredPlayers} players connected`}</p>
+              {state?.roomCode !== null && state?.roomCode !== undefined && (
+                <div className="room-code-display">
+                  <span>ROOM CODE</span>
+                  <strong>{state.roomCode}</strong>
+                  <button type="button" onClick={() => void navigator.clipboard.writeText(state.roomCode ?? "")}>Copy</button>
+                </div>
+              )}
             </div>
             <div className="toolbar-actions">
               <button className="secondary-button" onClick={() => room.send("sync")}>Sync</button>
@@ -263,18 +335,25 @@ export function App() {
                 viewerName={auth.user.display_name}
                 actionsEnabled={state?.status === "playing"}
                 selectedTargetCardId={guess.targetCardId}
-                selectedPenaltyCardId={guess.selfRevealCardId}
+                selectedPenaltyCardId={selectedPenaltyCardId}
                 onSelectTarget={(targetPlayerId, targetCardId) => setGuess((current) => ({ ...current, targetPlayerId, targetCardId }))}
-                onSelectPenalty={(selfRevealCardId) => setGuess((current) => ({ ...current, selfRevealCardId }))}
+                onSelectPenalty={setSelectedPenaltyCardId}
                 onInsert={(rackIndex) => room.send("insert", { rackIndex })}
               />
 
               <section className="control-dock">
                 <div className="phase-instruction">
                   <span className="eyebrow">YOUR ACTION</span>
-                  <strong>{!isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "insert" ? "Choose an insertion slot" : game.phase === "guess" ? "Select an opponent card" : "Match complete"}</strong>
+                  <strong>{!isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "place" ? "Place your card face-down" : game.phase === "penalty-place" ? "Place your revealed card" : game.phase === "self-penalty" ? "Choose one of your cards to reveal" : game.phase === "guess" && game.correctGuessesThisTurn > 0 ? "Guess again or stop and place" : game.phase === "guess" ? "Make the required guess" : "Match complete"}</strong>
                 </div>
-                <button className="draw-button" disabled={!canDraw} onClick={() => room.send("draw")}><span>◆</span> DRAW</button>
+                <div className="turn-actions">
+                  <button className="draw-button" disabled={!canDraw} onClick={() => room.send("draw")}><span>◆</span> DRAW</button>
+                  <button className="stop-button" disabled={!canStopAndPlace} onClick={() => room.send("stop")}>END &amp; PLACE</button>
+                  <button className="penalty-button" disabled={!canRevealPenalty} onClick={() => {
+                    room.send("self-penalty", { cardId: selectedPenaltyCardId });
+                    setSelectedPenaltyCardId("");
+                  }}>REVEAL SELECTED</button>
+                </div>
                 <div className="guess-controls">
                   <span className="target-readout">{guess.targetCardId ? `Target ${guess.targetCardId.slice(0, 8)}` : "Select a face-down opponent card"}</span>
                   <select value={guess.kind} onChange={(event) => setGuess({ ...guess, kind: event.target.value as GuessForm["kind"] })}><option value="standard">Standard</option><option value="joker">Joker</option></select>

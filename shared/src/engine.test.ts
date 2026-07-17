@@ -14,8 +14,11 @@ import {
   insertDrawnCard,
   isValidRackOrder,
   projectStateForPlayer,
+  revealSelfPenalty,
   resolveGuess,
   serializeGameState,
+  stopGuessingAndPlace,
+  validInsertionIndexes,
   type Card,
   type CardColor,
   type GameState,
@@ -63,6 +66,7 @@ function fixtureState(overrides: Partial<GameState> = {}): GameState {
     phase: "guess",
     pendingDraw: null,
     drawnCardId: null,
+    correctGuessesThisTurn: 0,
     winnerId: null,
     turn: 4,
     ...overrides,
@@ -144,10 +148,26 @@ describe("rack ordering", () => {
       (error: unknown) => error instanceof RuleViolation && error.code === "INVALID_INSERTION",
     );
   });
+
+  it("returns every legal duplicate slot and every slot for a Joker", () => {
+    const rack = [
+      standard("red-7-a", "7", "red", "diamonds"),
+      standard("red-7-b", "7", "red", "hearts"),
+      standard("black-7", "7", "black", "clubs"),
+    ];
+    assert.deepEqual(
+      validInsertionIndexes(rack, standard("red-7-c", "7", "red", "hearts")),
+      [0, 1, 2],
+    );
+    assert.deepEqual(
+      validInsertionIndexes(rack, { id: "joker", kind: "joker", revealed: false }),
+      [0, 1, 2, 3],
+    );
+  });
 });
 
 describe("authoritative turn resolution", () => {
-  it("reveals the targeted card on a correct rank-and-color guess and keeps the turn", () => {
+  it("requires a guess before placement, then allows stop and hidden placement after a correct guess", () => {
     const state = fixtureState({
       players: [
         { id: "p1", rack: [standard("p1-a", "A", "red", "hearts")], eliminated: false },
@@ -161,18 +181,35 @@ describe("authoritative turn resolution", () => {
         },
         { id: "p3", rack: [standard("p3-k", "K", "red", "diamonds")], eliminated: false },
       ],
+      pendingDraw: standard("drawn", "9", "red", "hearts"),
+      drawnCardId: "drawn",
     });
+    assert.throws(
+      () => insertDrawnCard(state, "p1", 1),
+      (error: unknown) => error instanceof RuleViolation && error.code === "WRONG_PHASE",
+    );
+    assert.throws(
+      () => stopGuessingAndPlace(state, "p1"),
+      (error: unknown) => error instanceof RuleViolation && error.code === "WRONG_PHASE",
+    );
     const result = resolveGuess(state, {
       actorId: "p1",
       targetPlayerId: "p2",
       targetCardId: "target",
       guess: { kind: "standard", rank: "7", color: "black" },
-      selfRevealCardId: null,
     });
     assert.equal(result.correct, true);
     assert.equal(result.nextPlayerId, "p1");
+    assert.equal(result.state.correctGuessesThisTurn, 1);
     assert.equal(result.state.players[1]?.rack[0]?.revealed, true);
     assert.equal(state.players[1]?.rack[0]?.revealed, false);
+
+    const placement = stopGuessingAndPlace(result.state, "p1");
+    assert.equal(placement.phase, "place");
+    const placed = insertDrawnCard(placement, "p1", 1);
+    assert.equal(placed.players[0]?.rack[1]?.id, "drawn");
+    assert.equal(placed.players[0]?.rack[1]?.revealed, false);
+    assert.equal(placed.players[placed.currentPlayerIndex]?.id, "p2");
   });
 
   it("reveals only the selected duplicate rank-and-color card", () => {
@@ -195,35 +232,37 @@ describe("authoritative turn resolution", () => {
       targetPlayerId: "p2",
       targetCardId: "red-7-hearts",
       guess: { kind: "standard", rank: "7", color: "red" },
-      selfRevealCardId: null,
     });
     assert.equal(result.state.players[1]?.rack[0]?.revealed, false);
     assert.equal(result.state.players[1]?.rack[1]?.revealed, true);
   });
 
-  it("reveals the inserted draw and advances after a wrong guess", () => {
+  it("reveals a pending draw after a wrong guess and waits for a legal placement", () => {
     const drawn = standard("drawn", "4", "red", "diamonds");
     let state = fixtureState({
       drawPile: [drawn],
       phase: "draw",
     });
     state = drawCard(state, "p1");
-    state = insertDrawnCard(state, "p1", 1);
+    assert.equal(state.phase, "guess");
     const result = resolveGuess(state, {
       actorId: "p1",
       targetPlayerId: "p2",
       targetCardId: "p2-7",
       guess: { kind: "standard", rank: "8", color: "black" },
-      selfRevealCardId: null,
     });
     assert.equal(result.correct, false);
     assert.equal(result.revealedCardId, "drawn");
-    assert.equal(result.state.players[0]?.rack.find((card) => card.id === "drawn")?.revealed, true);
-    assert.equal(result.nextPlayerId, "p2");
-    assert.equal(result.state.phase, "guess");
+    assert.equal(result.state.pendingDraw?.revealed, true);
+    assert.equal(result.state.phase, "penalty-place");
+    assert.equal(result.nextPlayerId, "p1");
+
+    const placed = insertDrawnCard(result.state, "p1", 1);
+    assert.equal(placed.players[0]?.rack.find((card) => card.id === "drawn")?.revealed, true);
+    assert.equal(placed.players[placed.currentPlayerIndex]?.id, "p2");
   });
 
-  it("uses a chosen own card as the wrong-guess penalty when the pile is empty", () => {
+  it("waits for the player to choose an own-card penalty after a wrong empty-pile guess", () => {
     const state = fixtureState();
     const thirdPlayer = state.players[2];
     assert.ok(thirdPlayer !== undefined);
@@ -234,11 +273,41 @@ describe("authoritative turn resolution", () => {
       targetPlayerId: "p2",
       targetCardId: "p2-7",
       guess: { kind: "standard", rank: "7", color: "red" },
-      selfRevealCardId: "p1-a",
     });
     assert.equal(result.correct, false);
-    assert.equal(result.revealedCardId, "p1-a");
-    assert.equal(result.state.players[0]?.eliminated, true);
+    assert.equal(result.revealedCardId, null);
+    assert.equal(result.state.phase, "self-penalty");
+    assert.equal(result.state.players[0]?.rack[0]?.revealed, false);
+
+    const penalized = revealSelfPenalty(result.state, "p1", "p1-a");
+    assert.equal(penalized.players[0]?.eliminated, true);
+    assert.equal(penalized.players[penalized.currentPlayerIndex]?.id, "p2");
+  });
+
+  it("allows exactly one empty-pile guess and ends the turn safely when it is correct", () => {
+    const state = fixtureState({
+      players: [
+        { id: "p1", rack: [standard("p1-a", "A", "red", "hearts")], eliminated: false },
+        {
+          id: "p2",
+          rack: [
+            standard("target", "7", "black", "clubs"),
+            standard("other", "8", "red", "hearts"),
+          ],
+          eliminated: false,
+        },
+        { id: "p3", rack: [standard("p3-k", "K", "red", "diamonds")], eliminated: false },
+      ],
+    });
+    const result = resolveGuess(state, {
+      actorId: "p1",
+      targetPlayerId: "p2",
+      targetCardId: "target",
+      guess: { kind: "standard", rank: "7", color: "black" },
+    });
+    assert.equal(result.correct, true);
+    assert.equal(result.state.players[1]?.rack[0]?.revealed, true);
+    assert.equal(result.state.turn, state.turn + 1);
     assert.equal(result.nextPlayerId, "p2");
   });
 
@@ -250,7 +319,14 @@ describe("authoritative turn resolution", () => {
     const state = fixtureState({
       players: [
         { id: "p1", rack: [standard("p1-a", "A", "red", "hearts")], eliminated: false },
-        { id: "p2", rack: [{ id: "cipher", kind: "joker", revealed: false }], eliminated: false },
+        {
+          id: "p2",
+          rack: [
+            { id: "cipher", kind: "joker", revealed: false },
+            standard("p2-other", "K", "black", "clubs"),
+          ],
+          eliminated: false,
+        },
         { id: "p3", rack: [standard("p3-k", "K", "black", "clubs")], eliminated: false },
       ],
     });
@@ -259,11 +335,10 @@ describe("authoritative turn resolution", () => {
       targetPlayerId: "p2",
       targetCardId: "cipher",
       guess: { kind: "joker" },
-      selfRevealCardId: null,
     });
     assert.equal(result.correct, true);
     assert.equal(result.revealedCardId, "cipher");
-    assert.equal(result.nextPlayerId, "p1");
+    assert.equal(result.nextPlayerId, "p2");
   });
 
   it("ends the game when only one active player remains", () => {
@@ -272,7 +347,6 @@ describe("authoritative turn resolution", () => {
       targetPlayerId: "p2",
       targetCardId: "p2-7",
       guess: { kind: "standard", rank: "7", color: "black" },
-      selfRevealCardId: null,
     });
     assert.equal(result.gameOver, true);
     assert.equal(result.winnerId, "p1");
@@ -315,8 +389,9 @@ describe("privacy and reconnect state", () => {
 
   it("round-trips the authoritative turn state for reconnects", () => {
     const original = fixtureState({
-      phase: "insert",
+      phase: "guess",
       pendingDraw: standard("pending", "10", "red", "hearts"),
+      drawnCardId: "pending",
       drawPile: [standard("next", "J", "black", "spades")],
     });
     const restored = deserializeGameState(serializeGameState(original));
@@ -325,8 +400,9 @@ describe("privacy and reconnect state", () => {
 
   it("forfeits a timed-out current player without losing a pending draw", () => {
     const state = fixtureState({
-      phase: "insert",
+      phase: "guess",
       pendingDraw: standard("pending", "10", "red", "hearts"),
+      drawnCardId: "pending",
       drawPile: [standard("next", "J", "black", "spades")],
       players: [
         { id: "p1", rack: [standard("p1-a", "A", "red", "hearts")], eliminated: false },

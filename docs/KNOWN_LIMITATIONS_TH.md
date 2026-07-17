@@ -3,6 +3,7 @@
 - Browser client เป็น UI สำหรับเล่นและตรวจระบบ ยังไม่ใช่งาน visual design ขั้นสุดท้าย
 - Live room state รองรับ client หลุด 30 วินาที แต่ยังไม่รอดจาก realtime container หรือ VM crash
 - มี Redis container เตรียมไว้สำหรับ distributed matchmaking, rate limit และ room snapshot แต่ room แบบ process เดียวยังไม่ได้ใช้
+- เลขห้อง 6 หลักใช้เพื่อค้นหาห้อง ไม่ใช่ secret สำหรับควบคุมสิทธิ์ และรับประกันว่าไม่ซ้ำภายใน realtime process เดียวเท่านั้น หาก scale หลาย process ต้องย้าย registry ไปใช้ Redis แบบ atomic
 - ยังไม่มี completed-match persistence, match history, leaderboard และ realtime-to-API result endpoint
 - ต้องปิด production email registration จนกว่าจะมี SMTP, email verification, password reset และ endpoint rate limit ส่วน local password auth เปิดไว้สำหรับทดสอบ
 - มีโค้ด Google sign-in แล้ว แต่ต้องใช้ Google credential จริงและตั้ง origin/callback ที่ถูกต้องจึงจะทดสอบได้

@@ -44,6 +44,7 @@ export interface ClientGameView {
   readonly phase: GameState["phase"];
   readonly pendingDraw: ClientCard | null;
   readonly drawnCardId: string | null;
+  readonly correctGuessesThisTurn: number;
   readonly winnerId: string | null;
   readonly turn: number;
 }
@@ -72,10 +73,11 @@ export function projectStateForPlayer(state: GameState, viewerId: string): Clien
     pendingDraw:
       state.pendingDraw === null
         ? null
-        : currentPlayer.id === viewerId
+        : currentPlayer.id === viewerId || state.pendingDraw.revealed
           ? visibleCard(state.pendingDraw)
           : hiddenCard(state.pendingDraw),
     drawnCardId: state.drawnCardId,
+    correctGuessesThisTurn: state.correctGuessesThisTurn,
     winnerId: state.winnerId,
     turn: state.turn,
   };
