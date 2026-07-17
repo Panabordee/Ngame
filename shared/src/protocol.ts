@@ -85,6 +85,10 @@ export interface UpdateRoomSettingsMessage {
   readonly jokerCount: RoomSettings["jokerCount"];
 }
 
+export interface RoomSettingsAppliedMessage {
+  readonly settings: RoomSettings;
+}
+
 export interface SelectStartingCardMessage {
   readonly cardId: string;
 }

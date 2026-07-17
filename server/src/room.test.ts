@@ -7,6 +7,7 @@ import {
   deserializeGameState,
   type CardGuess,
   type ClientGameView,
+  type RoomSettingsAppliedMessage,
   type StateEnvelope,
   validInsertionIndexes,
 } from "@ngame/shared";
@@ -427,6 +428,9 @@ test("a code-room host can run a private custom 40-card match", async () => {
     host,
     (state) => state.settings.preset === "custom" && state.settings.totalCards === 40,
   );
+  const settingsApplied = host.waitForMessage(
+    "settings-applied",
+  ) as Promise<RoomSettingsAppliedMessage>;
   host.send("update-settings", {
     preset: "custom",
     turnSeconds: 30,
@@ -434,13 +438,15 @@ test("a code-room host can run a private custom 40-card match", async () => {
     drawRounds: 2,
     jokerCount: 2,
   });
-  assert.deepEqual((await settingsState).settings, {
+  const expectedSettings = {
     preset: "custom",
     turnSeconds: 30,
     totalCards: 40,
     drawRounds: 2,
     jokerCount: 2,
-  });
+  } as const;
+  assert.deepEqual((await settingsState).settings, expectedSettings);
+  assert.deepEqual((await settingsApplied).settings, expectedSettings);
 
   const allReady = waitForStateWhere(host, (state) => state.players.every((player) => player.ready));
   for (const client of clients) client.send("ready", true);

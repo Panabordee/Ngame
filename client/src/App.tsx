@@ -4,6 +4,7 @@ import {
   type CardColor,
   type Rank,
   type RoomSettings,
+  type RoomSettingsAppliedMessage,
   type RoomErrorMessage,
   type StateEnvelope,
 } from "@ngame/shared";
@@ -43,6 +44,17 @@ const INITIAL_SETTINGS: RoomSettings = {
 };
 
 type JoinMode = "quick" | "create-code" | "join-code";
+type SettingsSaveStatus = "synced" | "dirty" | "applying" | "approved";
+
+function roomSettingsEqual(left: RoomSettings, right: RoomSettings): boolean {
+  return (
+    left.preset === right.preset &&
+    left.turnSeconds === right.turnSeconds &&
+    left.totalCards === right.totalCards &&
+    left.drawRounds === right.drawRounds &&
+    left.jokerCount === right.jokerCount
+  );
+}
 
 function realtimeHttpUrl(): string {
   return REALTIME_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/$/, "");
@@ -69,6 +81,8 @@ export function App() {
   const [profileUsername, setProfileUsername] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<RoomSettings>(INITIAL_SETTINGS);
+  const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<SettingsSaveStatus>("synced");
   const [clockNow, setClockNow] = useState(Date.now());
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
 
@@ -111,6 +125,14 @@ export function App() {
             (state.turnDeadlineMs - (clockNow + serverClockOffsetMs)) / 1_000,
           ),
         );
+  const settingsChanged = state !== null && !roomSettingsEqual(settingsDraft, state.settings);
+  const visibleSettingsStatus = settingsSaveStatus === "applying"
+    ? "applying"
+    : settingsChanged
+      ? "dirty"
+      : settingsSaveStatus === "approved"
+        ? "approved"
+        : "synced";
 
   useEffect(() => {
     let active = true;
@@ -146,10 +168,11 @@ export function App() {
   }, [game?.turn]);
 
   useEffect(() => {
-    if (state?.settings !== undefined) {
-      setSettingsDraft(state.settings);
-    }
-  }, [state?.settings]);
+    if (room === null || state?.settings === undefined || settingsRoomId === room.roomId) return;
+    setSettingsDraft(state.settings);
+    setSettingsRoomId(room.roomId);
+    setSettingsSaveStatus("synced");
+  }, [room, settingsRoomId, state?.settings]);
 
   useEffect(() => {
     if (state?.turnDeadlineMs === null || state?.turnDeadlineMs === undefined) return;
@@ -174,6 +197,14 @@ export function App() {
     });
     joined.onMessage("error", (message: RoomErrorMessage) => {
       setError(`${message.code}: ${message.message}`);
+      setSettingsSaveStatus((current) => current === "applying" ? "dirty" : current);
+    });
+    joined.onMessage("settings-applied", (message: RoomSettingsAppliedMessage) => {
+      setSettingsDraft(message.settings);
+      setSettingsSaveStatus("approved");
+      window.setTimeout(() => {
+        setSettingsSaveStatus((current) => current === "approved" ? "synced" : current);
+      }, 2_400);
     });
     joined.onDrop(() => setConnectionStatus("reconnecting"));
     joined.onReconnect(() => {
@@ -184,6 +215,7 @@ export function App() {
       setConnectionStatus("disconnected");
       setRoom(null);
       setState(null);
+      setSettingsRoomId(null);
     });
     setRoom(joined);
     setConnectionStatus("connected");
@@ -287,6 +319,8 @@ export function App() {
   }
 
   function saveRoomSettings(): void {
+    if (room === null || !settingsChanged || settingsSaveStatus === "applying") return;
+    setSettingsSaveStatus("applying");
     room?.send("update-settings", settingsDraft);
   }
 
@@ -634,39 +668,115 @@ export function App() {
               <div className="waiting-rune">◇</div>
               <h2>Seats are filling</h2>
               <p>The host may start with 3–{state?.desiredPlayers ?? desiredPlayers} ready players.</p>
-              {state !== null && (
+              {state !== null && roomPlayer?.isHost !== true && (
                 <div className="settings-summary">
                   <strong>{state.settings.preset === "classic" ? "Classic" : `Custom · ${state.settings.totalCards} cards`}</strong>
                   <span>{state.settings.drawRounds} draw rounds · {state.settings.turnSeconds === 0 ? "No timer" : `${state.settings.turnSeconds}s turns`}</span>
                 </div>
               )}
               {roomPlayer?.isHost === true && state !== null && (
-                <form className="room-settings" onSubmit={(event) => {
-                  event.preventDefault();
-                  saveRoomSettings();
-                }}>
-                  <label>
-                    Rules
-                    <select value={settingsDraft.preset} onChange={(event) => setSettingsDraft({ ...settingsDraft, preset: event.target.value as RoomSettings["preset"] })}>
-                      <option value="classic">Classic (full 52 + random Jokers)</option>
-                      <option value="custom" disabled={state.lobbyMode === "public"}>Custom</option>
-                    </select>
-                  </label>
-                  <label>
-                    Turn timer
-                    <select value={settingsDraft.turnSeconds} onChange={(event) => setSettingsDraft({ ...settingsDraft, turnSeconds: Number(event.target.value) as RoomSettings["turnSeconds"] })}>
-                      <option value={0}>Off</option><option value={30}>30 sec</option><option value={60}>1 min</option><option value={90}>1.5 min</option><option value={120}>2 min</option><option value={180}>3 min</option><option value={300}>5 min</option>
-                    </select>
-                  </label>
-                  {settingsDraft.preset === "custom" && (
-                    <>
-                      <label>Total cards<input type="number" min={24} max={56} value={settingsDraft.totalCards} onChange={(event) => setSettingsDraft({ ...settingsDraft, totalCards: Number(event.target.value) })} /></label>
-                      <label>Draw rounds<input type="number" min={1} max={8} value={settingsDraft.drawRounds} onChange={(event) => setSettingsDraft({ ...settingsDraft, drawRounds: Number(event.target.value) })} /></label>
-                      <label>Jokers<select value={settingsDraft.jokerCount} onChange={(event) => setSettingsDraft({ ...settingsDraft, jokerCount: Number(event.target.value) as RoomSettings["jokerCount"] })}><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label>
-                    </>
-                  )}
-                  <button type="submit" className="secondary-button">Apply settings</button>
-                </form>
+                <section className="room-settings-panel">
+                  <header className="room-settings-header">
+                    <div>
+                      <span className="eyebrow">HOST CONTROLS</span>
+                      <h3>Match settings</h3>
+                      <p>Shape the table before everyone readies up.</p>
+                    </div>
+                    <span className="settings-mode-badge">
+                      {settingsDraft.preset === "classic" ? "CLASSIC DECK" : "CUSTOM DECK"}
+                    </span>
+                  </header>
+
+                  <form className="room-settings" onSubmit={(event) => {
+                    event.preventDefault();
+                    saveRoomSettings();
+                  }}>
+                    <div className="room-settings-fields">
+                      <label className="settings-field">
+                        <span>Ruleset</span>
+                        <small>Choose the deck format</small>
+                        <select value={settingsDraft.preset} onChange={(event) => setSettingsDraft({ ...settingsDraft, preset: event.target.value as RoomSettings["preset"] })}>
+                          <option value="classic">Classic · full deck</option>
+                          <option value="custom" disabled={state.lobbyMode === "public"}>Custom · build your deck</option>
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Turn limit</span>
+                        <small>Time available per turn</small>
+                        <select value={settingsDraft.turnSeconds} onChange={(event) => setSettingsDraft({ ...settingsDraft, turnSeconds: Number(event.target.value) as RoomSettings["turnSeconds"] })}>
+                          <option value={0}>No time limit</option>
+                          <option value={30}>30 seconds</option>
+                          <option value={60}>1 minute</option>
+                          <option value={90}>1.5 minutes</option>
+                          <option value={120}>2 minutes</option>
+                          <option value={180}>3 minutes</option>
+                          <option value={300}>5 minutes</option>
+                        </select>
+                      </label>
+                      {settingsDraft.preset === "custom" && (
+                        <>
+                          <label className="settings-field">
+                            <span>Total cards</span>
+                            <small>24–56 cards in this match</small>
+                            <input type="number" min={24} max={56} value={settingsDraft.totalCards} onChange={(event) => setSettingsDraft({ ...settingsDraft, totalCards: Number(event.target.value) })} />
+                          </label>
+                          <label className="settings-field">
+                            <span>Draw allowance</span>
+                            <small>Rounds each player may draw</small>
+                            <input type="number" min={1} max={8} value={settingsDraft.drawRounds} onChange={(event) => setSettingsDraft({ ...settingsDraft, drawRounds: Number(event.target.value) })} />
+                          </label>
+                          <label className="settings-field">
+                            <span>Jokers</span>
+                            <small>Wild cards in the deck</small>
+                            <select value={settingsDraft.jokerCount} onChange={(event) => setSettingsDraft({ ...settingsDraft, jokerCount: Number(event.target.value) as RoomSettings["jokerCount"] })}>
+                              <option value={2}>2 Jokers</option>
+                              <option value={3}>3 Jokers</option>
+                              <option value={4}>4 Jokers</option>
+                            </select>
+                          </label>
+                        </>
+                      )}
+                    </div>
+
+                    <footer className="room-settings-footer">
+                      <div className={`settings-save-state state-${visibleSettingsStatus}`} aria-live="polite">
+                        <span className="settings-state-dot" />
+                        <div>
+                          <strong>
+                            {visibleSettingsStatus === "applying"
+                              ? "Waiting for server"
+                              : visibleSettingsStatus === "approved"
+                                ? "Settings approved"
+                                : visibleSettingsStatus === "dirty"
+                                  ? "Unsaved changes"
+                                  : "Settings up to date"}
+                          </strong>
+                          <small>{visibleSettingsStatus === "dirty" ? "Apply to update the room" : "Applying changes resets player readiness"}</small>
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        className={`apply-settings-button state-${visibleSettingsStatus}`}
+                        disabled={!settingsChanged || visibleSettingsStatus === "applying"}
+                      >
+                        {visibleSettingsStatus === "applying" ? (
+                          <span className="settings-spinner" aria-hidden="true" />
+                        ) : visibleSettingsStatus === "approved" ? (
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7" /></svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
+                        )}
+                        {visibleSettingsStatus === "applying"
+                          ? "Applying…"
+                          : visibleSettingsStatus === "approved"
+                            ? "Approved"
+                            : settingsChanged
+                              ? "Apply changes"
+                              : "Saved"}
+                      </button>
+                    </footer>
+                  </form>
+                </section>
               )}
               <div className="waiting-player-list">
                 {(state?.players ?? []).map((player) => (

@@ -32,6 +32,7 @@ import {
   type GameState,
   type LobbyMode,
   type RoomSettings,
+  type RoomSettingsAppliedMessage,
   type RoomErrorMessage,
   type RoomStatus,
   type StartingSelectionView,
@@ -63,6 +64,7 @@ type CipherClient = Client<{
   messages: {
     state: StateEnvelope;
     error: RoomErrorMessage;
+    "settings-applied": RoomSettingsAppliedMessage;
   };
 }>;
 
@@ -618,6 +620,7 @@ export class CipherDeckRoom extends Room<{
       }
       this.readyPlayerIds.clear();
       this.broadcastState();
+      client.send("settings-applied", { settings: { ...this.settings } });
     } catch (error) {
       if (error instanceof RuleViolation) {
         this.sendError(client, error.code, error.message);
