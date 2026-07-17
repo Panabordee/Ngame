@@ -843,6 +843,27 @@ summary:focus-visible {
 .seat-header div { display: grid; gap: 2px; }
 .seat-header strong { font-size: 0.88rem; }
 
+.seat-player-name,
+.waiting-player-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.guest-badge {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid rgba(223, 186, 112, 0.38);
+  border-radius: 999px;
+  color: var(--gold);
+  background: rgba(201, 133, 69, 0.1);
+  font-size: 0.48rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
 .card-count {
   color: var(--muted);
   font-size: 0.7rem;
@@ -1483,6 +1504,39 @@ summary:focus-visible {
   background: rgba(12, 35, 27, 0.78);
 }
 .waiting-player-list small { color: var(--gold); font-size: 0.62rem; letter-spacing: 0.1em; }
+.waiting-player-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.guest-room-name-editor {
+  display: grid;
+  width: min(420px, 90vw);
+  gap: 8px;
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid rgba(223, 186, 112, 0.25);
+  border-radius: 9px;
+  background: rgba(10, 31, 24, 0.76);
+}
+
+.guest-room-name-editor label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.guest-room-name-editor label small { color: var(--muted); font-size: 0.6rem; font-weight: 500; }
+.guest-room-name-editor > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.guest-room-name-editor input {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #30433d;
+  border-radius: 5px;
+  color: var(--cream);
+  background: #091310;
+}
 .waiting-actions { display: flex; gap: 10px; }
 .ready-active { border-color: #48b893; color: #9be0c8; }
 
@@ -1497,6 +1551,8 @@ summary:focus-visible {
   .auth-art { display: none; }
   .auth-panel { min-height: 100vh; padding: 34px 20px; }
   .guest-login-form > div { grid-template-columns: 1fr; }
+  .guest-room-name-editor label { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .guest-room-name-editor > div { grid-template-columns: 1fr; }
   .topbar { grid-template-columns: auto 1fr; padding: 10px 14px; }
   .topbar-status { display: none; }
   .profile-chip div { display: none; }

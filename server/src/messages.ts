@@ -3,6 +3,7 @@ import {
   type CardColor,
   type GuessAction,
   type GuessMessage,
+  type UpdateGuestDisplayNameMessage,
   type InsertMessage,
   type Rank,
   type SelfPenaltyMessage,
@@ -102,4 +103,13 @@ export function parseSelectStartingCard(value: unknown): SelectStartingCardMessa
     return null;
   }
   return { cardId: value.cardId };
+}
+
+export function parseGuestDisplayNameMessage(
+  value: unknown,
+): UpdateGuestDisplayNameMessage | null {
+  if (!isRecord(value) || typeof value.displayName !== "string") return null;
+  const displayName = value.displayName.trim().replace(/\s+/gu, " ");
+  if (displayName.length === 0 || displayName.length > 32) return null;
+  return { displayName };
 }

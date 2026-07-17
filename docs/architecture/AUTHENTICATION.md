@@ -19,7 +19,7 @@ FastAPI is the authentication authority. NGAME never receives a Google password.
 2. FastAPI returns a signed RS256 access JWT with `account_type=guest`, a random `sub`, and a separate `guest_session_id`.
 3. No user, identity, or refresh-session row is created. The response is `no-store` and no cookie is set.
 4. The browser keeps the Guest credential only in that tab's `sessionStorage` for up to `GUEST_SESSION_TTL_SECONDS`.
-5. Realtime reserves the Guest session for its first room. Leaving before the host starts releases the reservation; starting commits it for that JWT, so it cannot enter a second match.
+5. Realtime reserves the Guest session for its first room. The Guest may change its room display name while waiting; realtime validates it, broadcasts it with a visible Guest account type, and locks it at Start. Leaving before the host starts releases the reservation; starting commits it for that JWT, so it cannot enter a second match.
 6. The client stores the Colyseus reconnection token in the same tab so a reload can return to the committed match during the reconnect window.
 7. At game end or sign-out, the browser removes the Guest credential. Guests cannot edit profiles or call authenticated database endpoints.
 

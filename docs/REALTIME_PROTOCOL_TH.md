@@ -29,6 +29,7 @@ Guest session จองได้ครั้งละหนึ่งห้อง
 | --- | --- | --- |
 | `sync` | ไม่มี | ทุก phase |
 | `ready` | `true` หรือ `false` | lobby ที่ยังรอ |
+| `update-guest-name` | `{ "displayName": "Cipher Guest" }` | lobby ที่ยังรอ, Guest เท่านั้น |
 | `update-settings` | `{ preset, turnSeconds, totalCards, drawRounds, jokerCount }` | lobby, host เท่านั้น |
 | `start-game` | ไม่มี | lobby, host เท่านั้นและทุกคน ready |
 | `select-starting-card` | `{ "cardId": "opaque option ID" }` | phase เลือกคนเริ่ม |
@@ -79,7 +80,7 @@ Server หา actor จาก connection ที่ยืนยันตัวต
   "startingSelection": "setup state ที่ปลอดภัยหรือ null",
   "hostPlayerId": "user UUID",
   "connectedPlayers": 3,
-  "players": "ชื่อ, host, ready และ connection status",
+  "players": "ชื่อ, account type, host, ready และ connection status",
   "droppedPlayerIds": [],
   "serverTimeMs": 0,
   "turnDeadlineMs": "epoch milliseconds หรือ null",
@@ -89,6 +90,8 @@ Server หา actor จาก connection ที่ยืนยันตัวต
 
 ระหว่างเลือก ไพ่ตัวเลือกยังซ่อนค่าจนผู้มีสิทธิ์เลือกครบและเปิดเฉพาะใบที่เลือก ไพ่ที่ resolve แล้วจะยังเปิดระหว่าง tie redraw ส่วน `game` มี rack ที่กรองตามผู้ชม จำนวนกองจั่ว current player, phase, starting-card IDs, `pendingStartingJokerCardIds` เฉพาะของผู้ชม, pending draw, winner และเลขเทิร์น เซิร์ฟเวอร์จะไม่ส่ง ID ของ Joker เริ่มต้นที่คว่ำของผู้เล่นอื่น ไพ่คู่แข่งที่ยังไม่เปิดมีเพียง `{ id, kind: "hidden", revealed: false }`
 
-`error` มี `{ "code": "...", "message": "..." }` code ที่คาดได้เช่น `INVALID_MESSAGE`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION` และ `INVALID_TARGET`
+`guest-name-updated` ยืนยันชื่อในห้องหลัง normalize ชื่อ Guest ยาว 1–32 ตัว ต้องไม่ซ้ำกับคนอื่นในห้องตอนแก้ และจะล็อกเมื่อ server รับ Start ผู้เล่นทุกคนมี `accountType` และ client ต้องแสดงป้าย Guest ให้เห็นชัดเพื่อไม่ให้สับสนกับ profile ถาวร
+
+`error` มี `{ "code": "...", "message": "..." }` code ที่คาดได้เช่น `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION` และ `INVALID_TARGET`
 
 ข้อความในห้องถูกจำกัดด้วย `MAX_ROOM_MESSAGES_PER_SECOND` ผลเกมจาก client จะถูกเพิกเฉย มีเพียง authoritative room ที่ตัดสินการเปิดไพ่ การแพ้ และผู้ชนะ

@@ -303,6 +303,41 @@ test("guest can leave a waiting lobby but cannot switch rooms after match start"
   const player3 = await testServer.sdk.joinById(guest.roomId);
   player3.onMessage("state", () => undefined);
 
+  const invalidNameError = guest.waitForMessage("error") as Promise<{
+    code: string;
+  }>;
+  guest.send("update-guest-name", { displayName: "   " });
+  assert.equal((await invalidNameError).code, "INVALID_GUEST_NAME");
+
+  const renamed = waitForStateWhere(
+    player2,
+    (roomState) =>
+      roomState.players.find((player) => player.id === "guest-committed")?.displayName ===
+      "Cipher Guest",
+  );
+  const renameAck = guest.waitForMessage("guest-name-updated") as Promise<{
+    displayName: string;
+  }>;
+  guest.send("update-guest-name", { displayName: "  Cipher   Guest  " });
+  assert.equal((await renameAck).displayName, "Cipher Guest");
+  const renamedState = await renamed;
+  assert.equal(
+    renamedState.players.find((player) => player.id === "guest-committed")?.accountType,
+    "guest",
+  );
+
+  const registeredRenameError = player2.waitForMessage("error") as Promise<{
+    code: string;
+  }>;
+  player2.send("update-guest-name", { displayName: "Not Allowed" });
+  assert.equal((await registeredRenameError).code, "GUEST_ONLY");
+
+  const duplicateNameError = guest.waitForMessage("error") as Promise<{
+    code: string;
+  }>;
+  guest.send("update-guest-name", { displayName: "PLAYER GUEST-TEST-2" });
+  assert.equal((await duplicateNameError).code, "NAME_TAKEN");
+
   const starting = waitForStateWhere(
     guest,
     (roomState) => roomState.status === "starting",
@@ -316,6 +351,12 @@ test("guest can leave a waiting lobby but cannot switch rooms after match start"
   );
   guest.send("start-game");
   await starting;
+
+  const lockedNameError = guest.waitForMessage("error") as Promise<{
+    code: string;
+  }>;
+  guest.send("update-guest-name", { displayName: "Too Late" });
+  assert.equal((await lockedNameError).code, "MATCH_ALREADY_STARTED");
   await guest.leave(true);
 
   testServer.sdk.auth.token = "guest-committed";

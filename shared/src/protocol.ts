@@ -4,6 +4,7 @@ import type { ClientGameView } from "./view.ts";
 export type RoomStatus = "waiting" | "starting" | "playing" | "paused" | "finished";
 export type LobbyMode = "public" | "code";
 export type RulePreset = "classic" | "custom";
+export type AccountType = "registered" | "guest";
 
 export interface RoomSettings {
   readonly preset: RulePreset;
@@ -36,6 +37,7 @@ export interface StartingSelectionView {
 export interface RoomPlayer {
   readonly id: string;
   readonly displayName: string;
+  readonly accountType: AccountType;
   readonly connected: boolean;
   readonly isHost: boolean;
   readonly ready: boolean;
@@ -86,6 +88,14 @@ export interface UpdateRoomSettingsMessage {
 
 export interface RoomSettingsAppliedMessage {
   readonly settings: RoomSettings;
+}
+
+export interface UpdateGuestDisplayNameMessage {
+  readonly displayName: string;
+}
+
+export interface GuestDisplayNameUpdatedMessage {
+  readonly displayName: string;
 }
 
 export interface SelectStartingCardMessage {

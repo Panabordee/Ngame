@@ -22,7 +22,7 @@
 - `shared/src/game.ts`: แจกไพ่ phase ของเทิร์น การเดา penalty การแพ้ ผู้ชนะ และ forfeit
 - `shared/src/view.ts`: กรอง state ตามผู้เล่นเพื่อรักษาความลับ
 - `shared/src/snapshot.ts`: serialize authoritative state สำหรับ reconnect/persistence boundary
-- `shared/src/protocol.ts`: contract ของ message และ state envelope ที่ browser/server ใช้ร่วมกัน
+- `shared/src/protocol.ts`: contract ของ message/state envelope รวม account type ในห้องและการแก้ชื่อ Guest
 - `server/src/CipherDeckRoom.ts`: lifecycle ของ authenticated room และ adapter ระหว่าง network กับ engine
 - `server/src/auth.ts`: ตรวจ access token แบบ RS256
 - `server/src/guestSessions.ts`: registry จอง/commit Guest หนึ่งเกมสำหรับ realtime instance เดียว

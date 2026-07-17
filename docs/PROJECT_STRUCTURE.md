@@ -21,7 +21,7 @@
 - `shared/src/game.ts`: deal, turn phases, guesses, penalties, elimination, winner, and forfeit transitions.
 - `shared/src/view.ts`: per-player privacy projection.
 - `shared/src/snapshot.ts`: authoritative state serialization for reconnect/persistence boundaries.
-- `shared/src/protocol.ts`: message and state-envelope contracts shared by browser and realtime server.
+- `shared/src/protocol.ts`: message and state-envelope contracts, including room account type and Guest-name updates.
 - `server/src/CipherDeckRoom.ts`: authenticated room lifecycle and network-to-engine adapter.
 - `server/src/auth.ts`: RS256 access-token verification.
 - `server/src/guestSessions.ts`: one-match Guest reservation/commit registry for the single realtime instance.

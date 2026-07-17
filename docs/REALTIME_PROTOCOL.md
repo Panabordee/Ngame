@@ -29,6 +29,7 @@ A Guest session may reserve only one room. It may switch rooms only after leavin
 | --- | --- | --- |
 | `sync` | none | any |
 | `ready` | `true` or `false` | waiting lobby |
+| `update-guest-name` | `{ "displayName": "Cipher Guest" }` | waiting lobby, Guest only |
 | `update-settings` | `{ preset, turnSeconds, totalCards, drawRounds, jokerCount }` | waiting lobby, host only |
 | `start-game` | none | waiting lobby, host only, everyone ready |
 | `select-starting-card` | `{ "cardId": "opaque option ID" }` | starting selection |
@@ -79,7 +80,7 @@ The server derives the actor from the authenticated connection. No payload can c
   "startingSelection": "viewer-safe setup object or null",
   "hostPlayerId": "user UUID",
   "connectedPlayers": 3,
-  "players": "display name, host, ready, and connection status",
+  "players": "display name, account type, host, ready, and connection status",
   "droppedPlayerIds": [],
   "serverTimeMs": 0,
   "turnDeadlineMs": "epoch milliseconds or null",
@@ -89,6 +90,8 @@ The server derives the actor from the authenticated connection. No payload can c
 
 During starting selection, option values remain hidden until every eligible player chooses. Only selected cards reveal; resolved cards stay public during tie redraws. The `game` projection contains viewer-safe racks, draw-pile count, current player, phase, starting-card IDs, the viewer's own `pendingStartingJokerCardIds`, pending draw, winner, and turn. Another player's pending opening-Joker IDs are never projected. An unrevealed opponent card has only `{ id, kind: "hidden", revealed: false }`.
 
-`error` contains `{ "code": "...", "message": "..." }`. Expected codes include `INVALID_MESSAGE`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION`, and `INVALID_TARGET`.
+`guest-name-updated` confirms the normalized room display name. Guest names are 1–32 characters, must be unique inside that room when changed, and lock when Start is accepted. Every room player includes `accountType`; clients must display a visible Guest badge so a Guest name cannot be mistaken for a persistent profile.
+
+`error` contains `{ "code": "...", "message": "..." }`. Expected codes include `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION`, and `INVALID_TARGET`.
 
 Room messages are rate-limited by `MAX_ROOM_MESSAGES_PER_SECOND`. Any game result sent by a client is ignored; only the authoritative room evaluates reveals, elimination, and the winner.

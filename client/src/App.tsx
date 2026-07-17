@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Client, type Room } from "@colyseus/sdk";
 import {
   type CardColor,
+  type GuestDisplayNameUpdatedMessage,
   type Rank,
   type RoomSettings,
   type RoomSettingsAppliedMessage,
@@ -17,6 +18,7 @@ import {
   logout,
   refresh,
   restoreGuestSession,
+  saveGuestDisplayName,
   saveGuestReconnectionToken,
   startGoogleLogin,
   updateProfile,
@@ -75,6 +77,9 @@ export function App() {
   const [authReady, setAuthReady] = useState(false);
   const [guestName, setGuestName] = useState("");
   const [guestLoading, setGuestLoading] = useState(false);
+  const [guestRoomName, setGuestRoomName] = useState("");
+  const [guestNameRoomId, setGuestNameRoomId] = useState<string | null>(null);
+  const [guestNameSaving, setGuestNameSaving] = useState(false);
   const [desiredPlayers, setDesiredPlayers] = useState(3);
   const [roomCode, setRoomCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
@@ -97,6 +102,15 @@ export function App() {
 
   const game = state?.game ?? null;
   const roomPlayer = state?.players.find((player) => player.id === auth?.user.id);
+  const normalizedGuestRoomName = guestRoomName.trim().replace(/\s+/gu, " ");
+  const guestRoomNameChanged =
+    normalizedGuestRoomName.length > 0 &&
+    normalizedGuestRoomName !== roomPlayer?.displayName;
+  const playerLabel = (playerId: string | null | undefined): string => {
+    const player = state?.players.find((candidate) => candidate.id === playerId);
+    if (player === undefined) return "Player";
+    return `${player.displayName}${player.accountType === "guest" ? " · GUEST" : ""}`;
+  };
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
   const canHostStart =
     roomPlayer?.isHost === true &&
@@ -232,6 +246,20 @@ export function App() {
   }, [room, settingsRoomId, state?.settings]);
 
   useEffect(() => {
+    if (
+      room === null ||
+      auth?.user.account_type !== "guest" ||
+      roomPlayer === undefined ||
+      guestNameRoomId === room.roomId
+    ) {
+      return;
+    }
+    setGuestRoomName(roomPlayer.displayName);
+    setGuestNameRoomId(room.roomId);
+    setGuestNameSaving(false);
+  }, [auth?.user.account_type, guestNameRoomId, room, roomPlayer]);
+
+  useEffect(() => {
     if (state?.turnDeadlineMs === null || state?.turnDeadlineMs === undefined) return;
     setClockNow(Date.now());
     const timer = window.setInterval(() => setClockNow(Date.now()), 250);
@@ -262,6 +290,9 @@ export function App() {
     });
     joined.onMessage("error", (message: RoomErrorMessage) => {
       setError(`${message.code}: ${message.message}`);
+      if (["INVALID_GUEST_NAME", "GUEST_ONLY", "NAME_TAKEN", "MATCH_ALREADY_STARTED"].includes(message.code)) {
+        setGuestNameSaving(false);
+      }
       setSettingsSaveStatus((current) => current === "applying" ? "dirty" : current);
     });
     joined.onMessage("settings-applied", (message: RoomSettingsAppliedMessage) => {
@@ -271,7 +302,16 @@ export function App() {
         setSettingsSaveStatus((current) => current === "approved" ? "synced" : current);
       }, 2_400);
     });
-    joined.onDrop(() => setConnectionStatus("reconnecting"));
+    joined.onMessage("guest-name-updated", (message: GuestDisplayNameUpdatedMessage) => {
+      setGuestRoomName(message.displayName);
+      setGuestNameSaving(false);
+      const updated = saveGuestDisplayName(message.displayName);
+      if (updated !== null) setAuth(updated);
+    });
+    joined.onDrop(() => {
+      setGuestNameSaving(false);
+      setConnectionStatus("reconnecting");
+    });
     joined.onReconnect(() => {
       if (session.user.account_type === "guest") {
         saveGuestReconnectionToken(joined.reconnectionToken);
@@ -289,13 +329,18 @@ export function App() {
         clearGuestSession();
       }
       setConnectionStatus("disconnected");
+      setGuestNameSaving(false);
       setRoom(null);
       setState(null);
       setSettingsRoomId(null);
+      setGuestNameRoomId(null);
     });
     setRoom(joined);
     setConnectionStatus("connected");
     joined.send("sync");
+    if (session.user.account_type === "guest") {
+      joined.send("update-guest-name", { displayName: session.user.display_name });
+    }
   }
 
   async function joinRoom(mode: JoinMode): Promise<void> {
@@ -418,6 +463,21 @@ export function App() {
     if (room === null || !settingsChanged || settingsSaveStatus === "applying") return;
     setSettingsSaveStatus("applying");
     room?.send("update-settings", settingsDraft);
+  }
+
+  function saveGuestRoomName(): void {
+    if (
+      room === null ||
+      auth?.user.account_type !== "guest" ||
+      state?.status !== "waiting" ||
+      !guestRoomNameChanged ||
+      guestNameSaving
+    ) {
+      return;
+    }
+    setGuestNameSaving(true);
+    setError(null);
+    room.send("update-guest-name", { displayName: normalizedGuestRoomName });
   }
 
   if (!authReady) {
@@ -696,8 +756,10 @@ export function App() {
               <GameTable
                 game={game}
                 viewerId={auth.user.id}
-                viewerName={auth.user.display_name}
+                viewerName={roomPlayer?.displayName ?? auth.user.display_name}
+                viewerAccountType={auth.user.account_type}
                 playerNames={Object.fromEntries((state?.players ?? []).map((player) => [player.id, player.displayName]))}
+                playerAccountTypes={Object.fromEntries((state?.players ?? []).map((player) => [player.id, player.accountType]))}
                 actionsEnabled={state?.status === "playing" || state?.status === "starting"}
                 turnRemainingSeconds={turnRemainingSeconds}
                 selectedTargetCardId={guess.targetCardId}
@@ -740,7 +802,7 @@ export function App() {
                     : "Only tied players are choosing again."
                   : state.startingSelection.starterPlayerId === null
                     ? "The highest cards tied. Tied players receive six fresh choices next."
-                    : `${state.players.find((player) => player.id === state.startingSelection?.starterPlayerId)?.displayName ?? "The winner"} will start.`}
+                    : `${playerLabel(state.startingSelection?.starterPlayerId)} will start.`}
               </p>
               {state.startingSelection.phase === "choosing" && (
                 <div className="starter-choice-status" aria-live="polite">
@@ -783,7 +845,7 @@ export function App() {
                           ? `CHOOSE ${index + 1}`
                           : selectedByMe
                             ? "YOUR CARD"
-                            : state.players.find((player) => player.id === option.selectedByPlayerId)?.displayName ?? "Selected"}
+                            : playerLabel(option.selectedByPlayerId)}
                       </small>
                     </div>
                   );
@@ -793,7 +855,7 @@ export function App() {
                 <div className="resolved-starters">
                   {state.startingSelection.resolvedCards.map((result) => (
                     <span key={result.playerId}>
-                      {state.players.find((player) => player.id === result.playerId)?.displayName}: {result.card.kind === "joker" ? "JOKER" : `${result.card.rank} ${result.card.color}`}
+                      {playerLabel(result.playerId)}: {result.card.kind === "joker" ? "JOKER" : `${result.card.rank} ${result.card.color}`}
                     </span>
                   ))}
                 </div>
@@ -804,6 +866,37 @@ export function App() {
               <div className="waiting-rune">◇</div>
               <h2>Seats are filling</h2>
               <p>The host may start with 3–{state?.desiredPlayers ?? desiredPlayers} ready players.</p>
+              {auth.user.account_type === "guest" && roomPlayer !== undefined && (
+                <form
+                  className="guest-room-name-editor"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    saveGuestRoomName();
+                  }}
+                >
+                  <label htmlFor="guest-room-display-name">
+                    <span>Guest name in this room</span>
+                    <small>Editable until the host starts</small>
+                  </label>
+                  <div>
+                    <input
+                      id="guest-room-display-name"
+                      required
+                      maxLength={32}
+                      value={guestRoomName}
+                      onChange={(event) => setGuestRoomName(event.target.value)}
+                      autoComplete="nickname"
+                    />
+                    <button
+                      type="submit"
+                      className="secondary-button"
+                      disabled={!guestRoomNameChanged || guestNameSaving}
+                    >
+                      {guestNameSaving ? "Saving…" : "Save name"}
+                    </button>
+                  </div>
+                </form>
+              )}
               {state !== null && roomPlayer?.isHost !== true && (
                 <div className="settings-summary">
                   <strong>{state.settings.preset === "classic" ? "Classic" : `Custom · ${state.settings.totalCards} cards`}</strong>
@@ -917,7 +1010,10 @@ export function App() {
               <div className="waiting-player-list">
                 {(state?.players ?? []).map((player) => (
                   <div key={player.id}>
-                    <span>{player.displayName}</span>
+                    <span className="waiting-player-name">
+                      {player.displayName}
+                      {player.accountType === "guest" && <em className="guest-badge">GUEST</em>}
+                    </span>
                     <small>{player.isHost ? "HOST" : player.ready ? "READY" : "NOT READY"}</small>
                   </div>
                 ))}

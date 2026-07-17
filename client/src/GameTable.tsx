@@ -3,6 +3,7 @@ import {
   RANKS,
   validInsertionIndexes,
   type Card,
+  type AccountType,
   type CardColor,
   type ClientGameView,
   type Rank,
@@ -14,7 +15,9 @@ interface GameTableProps {
   readonly game: ClientGameView;
   readonly viewerId: string;
   readonly viewerName: string;
+  readonly viewerAccountType: AccountType;
   readonly playerNames: Readonly<Record<string, string>>;
+  readonly playerAccountTypes: Readonly<Record<string, AccountType>>;
   readonly actionsEnabled: boolean;
   readonly turnRemainingSeconds: number | null;
   readonly selectedTargetCardId: string;
@@ -34,7 +37,9 @@ export function GameTable({
   game,
   viewerId,
   viewerName,
+  viewerAccountType,
   playerNames,
+  playerAccountTypes,
   actionsEnabled,
   turnRemainingSeconds,
   selectedTargetCardId,
@@ -104,7 +109,10 @@ export function GameTable({
             <header className="seat-header">
               <div>
                 <span className="seat-kicker">Opponent {playerIndex + 1}</span>
-                <strong>{playerNames[player.id] ?? `Player · ${player.id.slice(0, 4).toUpperCase()}`}</strong>
+                <span className="seat-player-name">
+                  <strong>{playerNames[player.id] ?? `Player · ${player.id.slice(0, 4).toUpperCase()}`}</strong>
+                  {playerAccountTypes[player.id] === "guest" && <em className="guest-badge">GUEST</em>}
+                </span>
               </div>
               <span className="card-count">{player.rack.length} cards</span>
             </header>
@@ -226,7 +234,10 @@ export function GameTable({
           <header className="seat-header">
             <div>
               <span className="seat-kicker">Your rack</span>
-              <strong>{viewerName}</strong>
+              <span className="seat-player-name">
+                <strong>{viewerName}</strong>
+                {viewerAccountType === "guest" && <em className="guest-badge">GUEST</em>}
+              </span>
             </div>
             <span className="card-count">{viewer.rack.length} cards</span>
           </header>

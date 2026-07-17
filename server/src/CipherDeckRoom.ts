@@ -31,6 +31,7 @@ import {
   type Card,
   type ClientGameView,
   type GameState,
+  type GuestDisplayNameUpdatedMessage,
   type LobbyMode,
   type RoomSettings,
   type RoomSettingsAppliedMessage,
@@ -48,6 +49,7 @@ import {
 } from "./guestSessions.ts";
 import {
   parseGuessMessage,
+  parseGuestDisplayNameMessage,
   parseInsertMessage,
   parseRoomSettings,
   parseSelectStartingCard,
@@ -70,6 +72,7 @@ type CipherClient = Client<{
     state: StateEnvelope;
     error: RoomErrorMessage;
     "settings-applied": RoomSettingsAppliedMessage;
+    "guest-name-updated": GuestDisplayNameUpdatedMessage;
   };
 }>;
 
@@ -141,6 +144,7 @@ export class CipherDeckRoom extends Room<{
   private game: GameState | null = null;
   private readonly droppedPlayerIds = new Set<string>();
   private readonly readyPlayerIds = new Set<string>();
+  private readonly roomDisplayNames = new Map<string, string>();
   private readonly reservedGuestSessionIds = new Set<string>();
   private startingRevealTimer: ReturnType<typeof setTimeout> | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -201,6 +205,14 @@ export class CipherDeckRoom extends Room<{
         return;
       }
       this.updateRoomSettings(client, settings);
+    });
+    this.onMessage("update-guest-name", (client, payload: unknown) => {
+      const message = parseGuestDisplayNameMessage(payload);
+      if (message === null) {
+        this.sendError(client, "INVALID_GUEST_NAME", "Guest name must be 1–32 characters.");
+        return;
+      }
+      this.updateGuestDisplayName(client, message.displayName);
     });
     this.onMessage("select-starting-card", (client, payload: unknown) => {
       const message = parseSelectStartingCard(payload);
@@ -285,6 +297,7 @@ export class CipherDeckRoom extends Room<{
     if (this.hostPlayerId === null) {
       this.hostPlayerId = userId;
     }
+    this.roomDisplayNames.set(userId, this.authDisplayName(client));
     await this.updateStatus();
     this.broadcastState();
   }
@@ -338,6 +351,7 @@ export class CipherDeckRoom extends Room<{
     if (this.game === null || this.game.phase === "game-over") {
       const userId = this.userId(client);
       this.releaseGuestReservation(client);
+      if (this.startingSelection === null) this.roomDisplayNames.delete(userId);
       if (this.startingSelection !== null) {
         await this.abortStartingSelection(userId);
       }
@@ -841,6 +855,7 @@ export class CipherDeckRoom extends Room<{
       players: this.clients.map((connected) => ({
         id: this.userId(connected),
         displayName: this.displayName(connected),
+        accountType: connected.auth?.accountType ?? "registered",
         connected: !this.droppedPlayerIds.has(this.userId(connected)),
         isHost: this.userId(connected) === this.hostPlayerId,
         ready: this.readyPlayerIds.has(this.userId(connected)),
@@ -895,11 +910,41 @@ export class CipherDeckRoom extends Room<{
   }
 
   private displayName(client: CipherClient): string {
+    return this.roomDisplayNames.get(this.userId(client)) ?? this.authDisplayName(client);
+  }
+
+  private authDisplayName(client: CipherClient): string {
     const displayName = client.auth?.displayName;
     if (typeof displayName !== "string" || displayName.trim().length === 0) {
       return `Player · ${this.userId(client).slice(0, 4).toUpperCase()}`;
     }
     return displayName.trim().slice(0, 32);
+  }
+
+  private updateGuestDisplayName(client: CipherClient, displayName: string): void {
+    if (client.auth?.accountType !== "guest") {
+      this.sendError(client, "GUEST_ONLY", "Only Guest players can change a room name.");
+      return;
+    }
+    if (this.game !== null || this.startingSelection !== null) {
+      this.sendError(client, "MATCH_ALREADY_STARTED", "Guest names lock when the match starts.");
+      return;
+    }
+    const normalized = displayName.trim().replace(/\s+/gu, " ").slice(0, 32);
+    const duplicate = this.clients.some(
+      (connected) =>
+        connected !== client &&
+        this.displayName(connected).localeCompare(normalized, undefined, {
+          sensitivity: "accent",
+        }) === 0,
+    );
+    if (duplicate) {
+      this.sendError(client, "NAME_TAKEN", "That display name is already used in this room.");
+      return;
+    }
+    this.roomDisplayNames.set(this.userId(client), normalized);
+    this.broadcastState();
+    client.send("guest-name-updated", { displayName: normalized });
   }
 
   private reserveGuestSession(

@@ -103,6 +103,17 @@ export function saveGuestReconnectionToken(token: string): void {
   writeStoredGuestSession({ ...stored, reconnectionToken: token });
 }
 
+export function saveGuestDisplayName(displayName: string): AuthResponse | null {
+  const stored = readStoredGuestSession();
+  if (stored === null) return null;
+  const auth: AuthResponse = {
+    ...stored.auth,
+    user: { ...stored.auth.user, display_name: displayName },
+  };
+  writeStoredGuestSession({ ...stored, auth });
+  return auth;
+}
+
 export function clearGuestReconnectionToken(): void {
   const stored = readStoredGuestSession();
   if (stored === null || stored.reconnectionToken === undefined) return;
