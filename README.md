@@ -15,6 +15,7 @@ NGAME is a browser-based, server-authoritative card deduction game. The current 
 - [Authentication architecture](docs/architecture/AUTHENTICATION.md)
 - [Proxmox deployment architecture](docs/architecture/DEPLOYMENT.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
+- [Product backlog](docs/ROADMAP.md)
 
 ## Fast verification
 

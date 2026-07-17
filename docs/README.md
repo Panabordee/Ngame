@@ -18,4 +18,5 @@ English is kept in the original filename. Thai translations use the `_TH.md` suf
 | Authentication | [Authentication](architecture/AUTHENTICATION.md) | [Authentication ไทย](architecture/AUTHENTICATION_TH.md) |
 | Deployment architecture / สถาปัตยกรรม deploy | [Deployment](architecture/DEPLOYMENT.md) | [Deployment ไทย](architecture/DEPLOYMENT_TH.md) |
 | Known limitations / ข้อจำกัด | [Limitations](KNOWN_LIMITATIONS.md) | [ข้อจำกัด](KNOWN_LIMITATIONS_TH.md) |
+| Product backlog / สิ่งที่จะทำต่อ | [Roadmap](ROADMAP.md) | [Roadmap ไทย](ROADMAP_TH.md) |
 | Art assets / ข้อมูล artwork | [Bilingual asset record](../client/public/assets/ART_ASSETS.md) | [ข้อมูล asset สองภาษา](../client/public/assets/ART_ASSETS.md) |

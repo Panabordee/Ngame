@@ -15,6 +15,7 @@ NGAME คือเกมไพ่ deduction บนเบราว์เซอร
 - [สถาปัตยกรรม authentication](docs/architecture/AUTHENTICATION_TH.md)
 - [สถาปัตยกรรม deploy บน Proxmox](docs/architecture/DEPLOYMENT_TH.md)
 - [ข้อจำกัดที่ทราบใน MVP](docs/KNOWN_LIMITATIONS_TH.md)
+- [รายการสิ่งที่จะทำต่อ](docs/ROADMAP_TH.md)
 
 ## ตรวจระบบแบบรวดเร็ว
 
