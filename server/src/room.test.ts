@@ -170,13 +170,21 @@ async function completeStartingSelection(
       continue;
     }
     if (selection?.phase === "joker-placement") {
-      const pendingPlayerIds = state.game?.pendingStartingJokerPlayerIds ?? [];
-      const playing = waitForStateWhere(observer, (candidate) => candidate.status === "playing");
-      for (const playerId of pendingPlayerIds) {
-        const clientIndex = state.players.findIndex((player) => player.id === playerId);
-        clients[clientIndex]?.send("place-starting-joker", { rackIndex: 0 });
+      for (const client of clients) {
+        let playerState = await requestState(client);
+        while ((playerState.game?.pendingStartingJokerCardIds.length ?? 0) > 0) {
+          const pendingCount = playerState.game?.pendingStartingJokerCardIds.length ?? 0;
+          const placed = waitForStateWhere(
+            client,
+            (candidate) =>
+              (candidate.game?.pendingStartingJokerCardIds.length ?? 0) < pendingCount,
+          );
+          client.send("place-starting-joker", { rackIndex: 0 });
+          playerState = await placed;
+          state = playerState;
+        }
       }
-      state = await playing;
+      if (state.status !== "playing") state = await requestState(observer);
     }
   }
   throw new Error("Starting-player selection did not finish.");
@@ -304,10 +312,12 @@ test("three authenticated clients can play without leaking hidden cards", async 
     (envelope) => envelope.game?.pendingDraw !== null,
   );
   activeClient.send("draw");
-  const afterDraw = ownView(await drawState, activePlayerId);
+  const afterDrawEnvelope = await drawState;
+  const afterDraw = ownView(afterDrawEnvelope, activePlayerId);
   assert.equal(afterDraw.phase, "guess");
   assert.notEqual(afterDraw.pendingDraw, null);
   assert.notEqual(afterDraw.pendingDraw?.kind, "hidden");
+  assert.ok((afterDrawEnvelope.turnDeadlineMs ?? 0) > (started.turnDeadlineMs ?? 0));
 
   const serverRoom = testServer.getRoomById<CipherDeckRoom>(client1.roomId);
   let authoritative = deserializeGameState(serverRoom.getSnapshot() as string);
@@ -369,6 +379,48 @@ test("three authenticated clients can play without leaking hidden cards", async 
     client2.leave(true),
     client3.leave(true),
   ]);
+});
+
+test("the realtime action timer eliminates an active player who does not draw", async () => {
+  CipherDeckRoom.turnTimerMillisecondsOverride = 600;
+  const clients: ColyseusClientRoom[] = [];
+  try {
+    for (let player = 1; player <= 3; player += 1) {
+      testServer.sdk.auth.token = `user-idle-${player}`;
+      const client = player === 1
+        ? await testServer.sdk.create("cipher_deck", {
+          desiredPlayers: 3,
+          lobbyMode: "code",
+        })
+        : await testServer.sdk.joinById(clients[0]!.roomId);
+      client.onMessage("state", () => undefined);
+      clients.push(client);
+    }
+
+    const started = await readyAndStart(clients[0]!, clients);
+    const idlePlayerId = started.game!.currentPlayerId;
+    const observer = clients.find(
+      (_, index) => started.players[index]?.id !== idlePlayerId,
+    )!;
+    const eliminated = await waitForStateWhere(
+      observer,
+      (state) =>
+        state.game?.players.find((player) => player.id === idlePlayerId)?.eliminated === true,
+      2_000,
+    );
+
+    assert.equal(
+      eliminated.game?.players
+        .find((player) => player.id === idlePlayerId)
+        ?.rack.every((card) => card.revealed),
+      true,
+    );
+    assert.notEqual(eliminated.game?.currentPlayerId, idlePlayerId);
+    assert.notEqual(eliminated.turnDeadlineMs, null);
+  } finally {
+    CipherDeckRoom.turnTimerMillisecondsOverride = null;
+    await Promise.all(clients.map((client) => client.leave(true)));
+  }
 });
 
 test("code rooms use six-digit codes and stay out of Quick Match", async () => {

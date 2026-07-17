@@ -74,7 +74,7 @@ function fixtureState(overrides: Partial<GameState> = {}): GameState {
     drawnCardId: null,
     correctGuessesThisTurn: 0,
     startingCardIds: {},
-    pendingStartingJokerPlayerIds: [],
+    pendingStartingJokerCardIdsByPlayer: {},
     winnerId: null,
     turn: 4,
     ...overrides,
@@ -156,30 +156,66 @@ describe("deck setup and dealing", () => {
     }
   });
 
-  it("requires a starting Joker owner to choose any rack slot", () => {
-    const deck = createDeck(2, opaqueId);
-    const joker = deck.find((card) => card.kind === "joker")!;
+  it("requires every opening-hand Joker owner to choose any rack slot", () => {
+    const deck = createDeck(3, opaqueId);
+    const selectedJoker = deck.find((card) => card.kind === "joker")!;
     const assignments = [
       { playerId: "p1", card: deck[0]! },
-      { playerId: "p2", card: joker },
+      { playerId: "p2", card: selectedJoker },
       { playerId: "p3", card: deck[26]! },
     ];
     const assignedIds = new Set(assignments.map((assignment) => assignment.card.id));
+    const remainingDeck = deck.filter((card) => !assignedIds.has(card.id));
+    const dealtJokers = remainingDeck.filter((card) => card.kind === "joker");
+    const remainingStandards = remainingDeck.filter((card) => card.kind === "standard");
+    const dealingDeck = [
+      dealtJokers[0]!,
+      remainingStandards[0]!,
+      remainingStandards[1]!,
+      dealtJokers[1]!,
+      ...remainingStandards.slice(2),
+    ];
     const initial = createInitialGameWithStartingCards(
       ["p1", "p2", "p3"],
-      deck.filter((card) => !assignedIds.has(card.id)),
+      dealingDeck,
       assignments,
       "p2",
       4,
     );
-    const rackLength = initial.players[1]!.rack.length;
     assert.equal(initial.phase, "starter-place");
-    for (let rackIndex = 0; rackIndex < rackLength; rackIndex += 1) {
+    assert.deepEqual(initial.pendingStartingJokerCardIdsByPlayer, {
+      p1: dealtJokers.map((card) => card.id),
+      p2: [selectedJoker.id],
+    });
+    const opponentSetupView = projectStateForPlayer(initial, "p3");
+    assert.deepEqual(opponentSetupView.pendingStartingJokerCardIds, []);
+    assert.equal(
+      dealtJokers.some((joker) => JSON.stringify(opponentSetupView).includes(joker.id)),
+      false,
+    );
+    assert.deepEqual(
+      projectStateForPlayer(initial, "p1").pendingStartingJokerCardIds,
+      dealtJokers.map((card) => card.id),
+    );
+
+    const p2RackLengthWithoutPending = initial.players[1]!.rack.length - 1;
+    for (let rackIndex = 0; rackIndex <= p2RackLengthWithoutPending; rackIndex += 1) {
       const placed = placeStartingJoker(initial, "p2", rackIndex);
-      assert.equal(placed.players[1]?.rack[rackIndex]?.id, joker.id);
-      assert.equal(placed.phase, "draw");
-      assert.deepEqual(placed.pendingStartingJokerPlayerIds, []);
+      assert.equal(placed.players[1]?.rack[rackIndex]?.id, selectedJoker.id);
+      assert.equal(placed.phase, "starter-place");
+      assert.deepEqual(placed.pendingStartingJokerCardIdsByPlayer, {
+        p1: dealtJokers.map((card) => card.id),
+      });
     }
+
+    const firstP1JokerPlaced = placeStartingJoker(initial, "p1", 0);
+    assert.deepEqual(firstP1JokerPlaced.pendingStartingJokerCardIdsByPlayer.p1, [
+      dealtJokers[1]!.id,
+    ]);
+    const allP1JokersPlaced = placeStartingJoker(firstP1JokerPlaced, "p1", 1);
+    const allPlaced = placeStartingJoker(allP1JokersPlaced, "p2", 2);
+    assert.equal(allPlaced.phase, "draw");
+    assert.deepEqual(allPlaced.pendingStartingJokerCardIdsByPlayer, {});
   });
 
   it("redraws equal highest ranks and multiple Jokers from a fresh set", () => {
@@ -264,9 +300,15 @@ describe("rack ordering", () => {
 });
 
 describe("authoritative turn resolution", () => {
-  it("resolves timer expiry without trusting a client action", () => {
+  it("eliminates a player who lets an action timer expire", () => {
+    const activePlayers = [
+      { id: "p1", rack: [standard("p1-a", "A", "red", "hearts")], eliminated: false },
+      { id: "p2", rack: [standard("p2-7", "7", "black", "clubs")], eliminated: false },
+      { id: "p3", rack: [standard("p3-k", "K", "red", "diamonds")], eliminated: false },
+    ];
     const skipped = resolveTurnTimeout(
       fixtureState({
+        players: activePlayers,
         phase: "draw",
         drawPile: [standard("draw", "4", "red", "hearts")],
       }),
@@ -274,9 +316,12 @@ describe("authoritative turn resolution", () => {
     );
     assert.equal(skipped.currentPlayerIndex, 1);
     assert.equal(skipped.turn, 5);
+    assert.equal(skipped.players[0]?.eliminated, true);
+    assert.equal(skipped.players[0]?.rack.every((card) => card.revealed), true);
 
     const pending = resolveTurnTimeout(
       fixtureState({
+        players: activePlayers,
         phase: "guess",
         pendingDraw: standard("pending-timeout", "4", "red", "hearts"),
       }),
@@ -286,12 +331,44 @@ describe("authoritative turn resolution", () => {
       (card) => card.id === "pending-timeout",
     );
     assert.equal(timedOutCard?.revealed, true);
+    assert.equal(pending.players[0]?.eliminated, true);
     assert.equal(pending.currentPlayerIndex, 1);
 
-    const penalized = resolveTurnTimeout(fixtureState(), () => 0);
+    const penalized = resolveTurnTimeout(fixtureState({ players: activePlayers }), () => 0);
     assert.equal(penalized.players[0]?.rack[0]?.revealed, true);
-    assert.equal(penalized.phase, "game-over");
-    assert.equal(penalized.winnerId, "p2");
+    assert.equal(penalized.players[0]?.eliminated, true);
+    assert.equal(penalized.currentPlayerIndex, 1);
+    assert.equal(penalized.phase, "guess");
+  });
+
+  it("eliminates every Joker owner who ignores opening placement", () => {
+    const timedOut = resolveTurnTimeout(
+      fixtureState({
+        phase: "starter-place",
+        players: [
+          {
+            id: "p1",
+            rack: [{ id: "p1-joker", kind: "joker", revealed: false }],
+            eliminated: false,
+          },
+          {
+            id: "p2",
+            rack: [{ id: "p2-joker", kind: "joker", revealed: true }],
+            eliminated: false,
+          },
+          { id: "p3", rack: [standard("p3-k", "K", "red", "diamonds")], eliminated: false },
+        ],
+        pendingStartingJokerCardIdsByPlayer: {
+          p1: ["p1-joker"],
+          p2: ["p2-joker"],
+        },
+      }),
+      () => 0,
+    );
+    assert.equal(timedOut.players[0]?.eliminated, true);
+    assert.equal(timedOut.players[1]?.eliminated, true);
+    assert.equal(timedOut.phase, "game-over");
+    assert.equal(timedOut.winnerId, "p3");
   });
 
   it("requires a guess before placement, then allows stop and hidden placement after a correct guess", () => {
@@ -550,7 +627,7 @@ describe("privacy and reconnect state", () => {
     const state = fixtureState({
       phase: "starter-place",
       startingCardIds: { p1: "starter-joker" },
-      pendingStartingJokerPlayerIds: ["p1"],
+      pendingStartingJokerCardIdsByPlayer: { p1: ["starter-joker"] },
       players: [
         {
           id: "p1",
@@ -563,7 +640,7 @@ describe("privacy and reconnect state", () => {
     });
     const forfeited = forfeitPlayer(state, "p1");
     assert.equal(forfeited.phase, "draw");
-    assert.deepEqual(forfeited.pendingStartingJokerPlayerIds, []);
+    assert.deepEqual(forfeited.pendingStartingJokerCardIdsByPlayer, {});
     assert.equal(forfeited.players[forfeited.currentPlayerIndex]?.id, "p2");
   });
 });

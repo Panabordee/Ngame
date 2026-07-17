@@ -85,7 +85,7 @@ The server derives the actor from the authenticated connection. No payload can c
 }
 ```
 
-During starting selection, option values remain hidden until every eligible player chooses. Only selected cards reveal; resolved cards stay public during tie redraws. The `game` projection contains viewer-safe racks, draw-pile count, current player, phase, starting-card IDs, pending starting-Joker owners, pending draw, winner, and turn. An unrevealed opponent card has only `{ id, kind: "hidden", revealed: false }`.
+During starting selection, option values remain hidden until every eligible player chooses. Only selected cards reveal; resolved cards stay public during tie redraws. The `game` projection contains viewer-safe racks, draw-pile count, current player, phase, starting-card IDs, the viewer's own `pendingStartingJokerCardIds`, pending draw, winner, and turn. Another player's pending opening-Joker IDs are never projected. An unrevealed opponent card has only `{ id, kind: "hidden", revealed: false }`.
 
 `error` contains `{ "code": "...", "message": "..." }`. Expected codes include `INVALID_MESSAGE`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION`, and `INVALID_TARGET`.
 

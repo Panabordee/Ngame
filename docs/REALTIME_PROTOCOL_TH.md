@@ -85,7 +85,7 @@ Server หา actor จาก connection ที่ยืนยันตัวต
 }
 ```
 
-ระหว่างเลือก ไพ่ตัวเลือกยังซ่อนค่าจนผู้มีสิทธิ์เลือกครบและเปิดเฉพาะใบที่เลือก ไพ่ที่ resolve แล้วจะยังเปิดระหว่าง tie redraw ส่วน `game` มี rack ที่กรองตามผู้ชม จำนวนกองจั่ว current player, phase, starting-card IDs, รายชื่อผู้รอวาง Joker, pending draw, winner และเลขเทิร์น ไพ่คู่แข่งที่ยังไม่เปิดมีเพียง `{ id, kind: "hidden", revealed: false }`
+ระหว่างเลือก ไพ่ตัวเลือกยังซ่อนค่าจนผู้มีสิทธิ์เลือกครบและเปิดเฉพาะใบที่เลือก ไพ่ที่ resolve แล้วจะยังเปิดระหว่าง tie redraw ส่วน `game` มี rack ที่กรองตามผู้ชม จำนวนกองจั่ว current player, phase, starting-card IDs, `pendingStartingJokerCardIds` เฉพาะของผู้ชม, pending draw, winner และเลขเทิร์น เซิร์ฟเวอร์จะไม่ส่ง ID ของ Joker เริ่มต้นที่คว่ำของผู้เล่นอื่น ไพ่คู่แข่งที่ยังไม่เปิดมีเพียง `{ id, kind: "hidden", revealed: false }`
 
 `error` มี `{ "code": "...", "message": "..." }` code ที่คาดได้เช่น `INVALID_MESSAGE`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION` และ `INVALID_TARGET`
 

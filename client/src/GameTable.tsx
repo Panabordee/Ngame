@@ -54,19 +54,22 @@ export function GameTable({
   const isViewerTurn = game.currentPlayerId === viewerId;
   const canTarget = actionsEnabled && isViewerTurn && game.phase === "guess";
   const canSelectPenalty = actionsEnabled && isViewerTurn && game.phase === "self-penalty";
+  const pendingStartingJokerCardIds = new Set(game.pendingStartingJokerCardIds);
   const isStartingJokerPlacement =
     actionsEnabled &&
     game.phase === "starter-place" &&
-    game.pendingStartingJokerPlayerIds.includes(viewerId);
+    game.pendingStartingJokerCardIds.length > 0;
   const isPlacing =
     isStartingJokerPlacement ||
     (isViewerTurn && (game.phase === "place" || game.phase === "penalty-place"));
-  const startingCardId = game.startingCardIds[viewerId];
+  const startingJokerCardId = game.pendingStartingJokerCardIds[0];
   const startingJoker = isStartingJokerPlacement
-    ? viewer?.rack.find((card) => card.id === startingCardId && card.kind === "joker") ?? null
+    ? viewer?.rack.find(
+      (card) => card.id === startingJokerCardId && card.kind === "joker",
+    ) ?? null
     : null;
   const placementRack = isStartingJokerPlacement
-    ? viewer?.rack.filter((card) => card.id !== startingCardId) ?? []
+    ? viewer?.rack.filter((card) => !pendingStartingJokerCardIds.has(card.id)) ?? []
     : viewer?.rack ?? [];
   const visibleRack = viewer?.rack.flatMap((card): Card[] =>
     card.kind === "hidden" ? [] : [structuredClone(card) as Card],
@@ -83,6 +86,8 @@ export function GameTable({
         ? validInsertionIndexes(visibleRack, pendingCard)
         : [],
   );
+  const isTimeoutWarning =
+    turnRemainingSeconds !== null && turnRemainingSeconds >= 0 && turnRemainingSeconds <= 10;
 
   return (
     <section className="game-table" aria-label="CipherDeck table">
@@ -187,7 +192,7 @@ export function GameTable({
           </div>
         </div>
 
-        <div className="turn-orbit">
+        <div className={`turn-orbit ${isTimeoutWarning ? "is-timeout-warning" : ""}`}>
           <span>TURN</span>
           <strong>{game.turn}</strong>
           <small>{game.phase.replace("-", " ")}</small>
@@ -203,6 +208,14 @@ export function GameTable({
           )}
         </div>
       </div>
+
+      {isTimeoutWarning && (
+        <div className="timeout-warning" role="alert">
+          <strong>{turnRemainingSeconds}</strong>
+          <span>ACT NOW</span>
+          <small>No action means immediate elimination</small>
+        </div>
+      )}
 
       {viewer !== undefined && (
         <article
@@ -266,7 +279,7 @@ export function GameTable({
               {game.phase === "place"
                 ? "Choose a + slot. Your drawn card will stay face-down."
                 : game.phase === "starter-place"
-                  ? "Your starting Joker is revealed. Choose any + slot before turn one."
+                  ? `Place your opening-hand Joker in any + slot. ${game.pendingStartingJokerCardIds.length} remaining.`
                   : "Wrong guess: choose a + slot for the revealed drawn card."}
             </p>
           )}

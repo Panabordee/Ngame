@@ -6,7 +6,7 @@
 - Six-digit room codes are convenience locators, not access-control secrets. Code uniqueness is guaranteed inside the current single realtime process; horizontal scaling will require an atomic Redis-backed code registry.
 - Duplicate accounts are blocked inside one room, but the same account can still occupy seats in different rooms from multiple tabs. Add a Redis-backed presence reservation before public matchmaking is exposed to untrusted traffic.
 - Completed match persistence, match history, leaderboard, and the realtime-to-API result endpoint are not implemented yet.
-- The normal turn timer is authoritative, but pre-game starting-card selection currently has no AFK timeout; one player can stall setup until they act or disconnect.
+- The action timer is authoritative during opening-Joker placement and normal play, but the earlier six-card starting-player selection still has no AFK timeout; one player can stall that selection until they act or disconnect.
 - Player profiles support display name, username, and the Google avatar URL. Uploading a custom avatar is not implemented.
 - Google sign-in requires real Google credentials and exact origin/callback configuration; automated tests use a provider stub and cannot validate a real Google tenant.
 - Realtime room messages are rate-limited, but distributed abuse controls for the FastAPI auth endpoints are still pending.

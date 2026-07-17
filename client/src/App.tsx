@@ -440,7 +440,7 @@ export function App() {
                 <span className="rule-number">02</span>
                 <div>
                   <h3>หาคนเริ่ม</h3>
-                  <p>เลือกไพ่ลับคนละ 1 ใบจาก 6 ใบ ผู้ที่ได้ไพ่สูงสุดหรือ Joker เริ่มก่อน ถ้าเสมอจะสุ่มใหม่ ไพ่ที่เลือกจะวางหงายบนแผงของผู้เล่น</p>
+                  <p>เลือกไพ่ลับคนละ 1 ใบจาก 6 ใบ ผู้ที่ได้ไพ่สูงสุดหรือ Joker เริ่มก่อน ถ้าเสมอจะสุ่มใหม่ จากนั้นเจ้าของเลือกตำแหน่งให้ Joker ทุกใบในมือเริ่มต้น</p>
                 </div>
               </article>
               <article className="rule-step">
@@ -474,7 +474,7 @@ export function App() {
             </div>
 
             <p className="rules-note">
-              <strong>เวลา:</strong> นาฬิกาด้านบนจะแสดงเวลาที่เหลือของเทิร์น คิดให้ไวและส่งคำตอบก่อนหมดเวลา
+              <strong>เวลา:</strong> เวลาจะรีเซ็ตหลังทุก action และเตือนสีส้มใน 10 วินาทีสุดท้าย หากไม่ทำ action ก่อนหมดเวลาจะถูกเปิดไพ่ทั้งมือและแพ้ทันที
             </p>
           </section>
         </div>
@@ -597,7 +597,7 @@ export function App() {
               <section className="control-dock">
                 <div className="phase-instruction">
                   <span className="eyebrow">YOUR ACTION</span>
-                  <strong>{game.phase === "starter-place" ? (game.pendingStartingJokerPlayerIds.includes(auth.user.id) ? "Place your revealed starting Joker" : "Waiting for starting Joker placement") : !isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "place" ? "Place your card face-down" : game.phase === "penalty-place" ? "Place your revealed card" : game.phase === "self-penalty" ? "Choose one of your cards to reveal" : game.phase === "guess" && game.correctGuessesThisTurn > 0 ? "Guess again or stop and place" : game.phase === "guess" ? "Make the required guess" : "Match complete"}</strong>
+                  <strong>{game.phase === "starter-place" ? (game.pendingStartingJokerCardIds.length > 0 ? `Place an opening-hand Joker · ${game.pendingStartingJokerCardIds.length} left` : "Waiting for opening-hand Joker placement") : !isMyTurn ? "Observe the table" : game.phase === "draw" ? "Draw a card" : game.phase === "place" ? "Place your card face-down" : game.phase === "penalty-place" ? "Place your revealed card" : game.phase === "self-penalty" ? "Choose one of your cards to reveal" : game.phase === "guess" && game.correctGuessesThisTurn > 0 ? "Guess again or stop and place" : game.phase === "guess" ? "Make the required guess" : "Match complete"}</strong>
                 </div>
                 <div className="turn-actions">
                   <button className="draw-button" disabled={!canDraw} onClick={() => room.send("draw")}><span>◆</span> DRAW</button>
@@ -623,7 +623,22 @@ export function App() {
                     ? "The highest cards tied. Tied players receive six fresh choices next."
                     : `${state.players.find((player) => player.id === state.startingSelection?.starterPlayerId)?.displayName ?? "The winner"} will start.`}
               </p>
-              <div className="starter-card-row">
+              {state.startingSelection.phase === "choosing" && (
+                <div className="starter-choice-status" aria-live="polite">
+                  <span>
+                    {state.startingSelection.options.filter((option) => option.selectedByPlayerId !== null).length}
+                    /{state.startingSelection.eligiblePlayerIds.length}
+                  </span>
+                  <p>
+                    {state.startingSelection.options.some((option) => option.selectedByPlayerId === auth.user.id)
+                      ? "Choice locked · waiting for other players"
+                      : state.startingSelection.eligiblePlayerIds.includes(auth.user.id)
+                        ? "Your turn to choose · select any available card"
+                        : "Waiting for the tied players to choose"}
+                  </p>
+                </div>
+              )}
+              <div className="starter-card-row" role="group" aria-label="Starting-player card choices">
                 {state.startingSelection.options.map((option, index) => {
                   const selectedByMe = option.selectedByPlayerId === auth.user.id;
                   const alreadySelected = state.startingSelection?.options.some(
@@ -635,7 +650,7 @@ export function App() {
                     !alreadySelected &&
                     option.selectedByPlayerId === null;
                   return (
-                    <div className="starter-option" key={option.id}>
+                    <div className={`starter-option ${selectedByMe ? "is-mine" : option.selectedByPlayerId !== null ? "is-claimed" : "is-available"}`} key={option.id}>
                       <CardView
                         card={option.card ?? { id: option.id, kind: "hidden", revealed: false }}
                         revealed={option.card !== null}
@@ -646,8 +661,10 @@ export function App() {
                       />
                       <small>
                         {option.selectedByPlayerId === null
-                          ? `CARD ${index + 1}`
-                          : state.players.find((player) => player.id === option.selectedByPlayerId)?.displayName ?? "Selected"}
+                          ? `CHOOSE ${index + 1}`
+                          : selectedByMe
+                            ? "YOUR CARD"
+                            : state.players.find((player) => player.id === option.selectedByPlayerId)?.displayName ?? "Selected"}
                       </small>
                     </div>
                   );
@@ -671,7 +688,7 @@ export function App() {
               {state !== null && roomPlayer?.isHost !== true && (
                 <div className="settings-summary">
                   <strong>{state.settings.preset === "classic" ? "Classic" : `Custom · ${state.settings.totalCards} cards`}</strong>
-                  <span>{state.settings.drawRounds} draw rounds · {state.settings.turnSeconds === 0 ? "No timer" : `${state.settings.turnSeconds}s turns`}</span>
+                  <span>{state.settings.drawRounds} draw rounds · {state.settings.turnSeconds === 0 ? "No timer" : `${state.settings.turnSeconds}s per action`}</span>
                 </div>
               )}
               {roomPlayer?.isHost === true && state !== null && (
@@ -701,8 +718,8 @@ export function App() {
                         </select>
                       </label>
                       <label className="settings-field">
-                        <span>Turn limit</span>
-                        <small>Time available per turn</small>
+                        <span>Action timer</span>
+                        <small>Time available for each decision</small>
                         <select value={settingsDraft.turnSeconds} onChange={(event) => setSettingsDraft({ ...settingsDraft, turnSeconds: Number(event.target.value) as RoomSettings["turnSeconds"] })}>
                           <option value={0}>No time limit</option>
                           <option value={30}>30 seconds</option>

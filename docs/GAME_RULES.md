@@ -12,7 +12,7 @@
 
 ## Starting player and initial deal
 
-The server presents six hidden cards. Each eligible player selects a different card, then chosen cards reveal together. Highest rank starts; Joker is above `K`. Tied highest players alone repeat with six fresh cards until one player wins. Every final selected card becomes a revealed part of its owner's initial hand. Standard cards enter legal order automatically; a starting Joker's owner chooses any rack slot.
+The server presents six hidden cards. Each eligible player selects a different card, then chosen cards reveal together. Highest rank starts; Joker is above `K`. Tied highest players alone repeat with six fresh cards until one player wins. Every final selected card becomes a revealed part of its owner's initial hand. Standard cards enter legal order automatically. Before turn one, each owner positions every Joker in their opening hand, including hidden Jokers from the normal deal; opponents never receive those hidden Joker IDs.
 
 The server calculates:
 
@@ -45,7 +45,7 @@ When the draw pile is empty, a new turn begins directly in the forced single-gue
 
 ## Turn timer
 
-The host may choose Off, 30, 60, 90, 120, 180, or 300 seconds. Clients count down from the server deadline. On expiry, an untouched draw phase is skipped; a pending card is revealed and auto-inserted into a legal slot; an empty-pile guess or self-penalty timeout reveals one server-randomized unrevealed card. Disconnect pause also pauses the timer.
+The host may choose Off, 30, 60, 90, 120, 180, or 300 seconds. The timer applies to each required action and resets after every successful action. Clients count down from the server deadline and show an orange warning during the last 10 seconds. Missing the deadline immediately eliminates the responsible player: the server reveals the whole rack and preserves/reveals any pending drawn card before advancing play. During opening-Joker placement, every owner who has not finished placing their Jokers at the deadline is eliminated. A disconnect pause also pauses the timer.
 
 ## Elimination and winner
 
@@ -58,5 +58,5 @@ A player is eliminated as soon as every card in their rack is revealed. The matc
 - Quick Match searches public rooms only. A code room is excluded from Quick Match and gets a unique server-generated six-digit code for direct joining.
 - A dropped connection pauses actions for the whole room for 30 seconds.
 - A successful reconnect resumes the same authenticated player and sends a fresh viewer-safe snapshot.
-- If the timeout expires, all of that player's cards are revealed and the player is eliminated. A pending drawn card is first inserted and revealed so it cannot disappear.
+- If the reconnection timeout expires, all of that player's cards are revealed and the player is eliminated. A pending drawn card is first inserted and revealed so it cannot disappear.
 - If the disconnected player owned the turn, play advances to the next active player. The winner check runs after the forfeit.

@@ -31,7 +31,6 @@ export interface StartingSelectionView {
   readonly options: readonly StartingCardOptionView[];
   readonly resolvedCards: readonly StartingCardResultView[];
   readonly starterPlayerId: string | null;
-  readonly pendingJokerPlayerIds: readonly string[];
 }
 
 export interface RoomPlayer {

@@ -17,6 +17,7 @@ import {
   drawCard,
   drawFreshStartingCards,
   forfeitPlayer,
+  hasPendingStartingJokerPlacements,
   highestStartingPlayerIds,
   insertDrawnCard,
   placeStartingJoker,
@@ -120,6 +121,7 @@ export class CipherDeckRoom extends Room<{
   };
 
   static startingRevealMilliseconds = 1_800;
+  static turnTimerMillisecondsOverride: number | null = null;
 
   private static readonly activeRoomCodes = new Set<string>();
 
@@ -555,8 +557,9 @@ export class CipherDeckRoom extends Room<{
       selection.starterPlayerId,
       this.settings.drawRounds,
     );
-    if (this.game.pendingStartingJokerPlayerIds.length > 0) {
+    if (hasPendingStartingJokerPlacements(this.game)) {
       selection.phase = "joker-placement";
+      this.armTurnTimer();
     } else {
       this.startingSelection = null;
       this.armTurnTimer();
@@ -661,10 +664,10 @@ export class CipherDeckRoom extends Room<{
     }
     try {
       this.game = placeStartingJoker(this.game, this.userId(client), rackIndex);
-      if (this.game.pendingStartingJokerPlayerIds.length === 0) {
+      if (!hasPendingStartingJokerPlacements(this.game)) {
         this.startingSelection = null;
-        this.armTurnTimer();
       }
+      this.armTurnTimer();
       void this.updateStatus();
       this.broadcastState();
     } catch (error) {
@@ -703,12 +706,15 @@ export class CipherDeckRoom extends Room<{
     this.pausedTurnRemainingMs = null;
   }
 
-  private armTurnTimer(durationMs = this.settings.turnSeconds * 1_000): void {
+  private configuredTurnDurationMs(): number {
+    return CipherDeckRoom.turnTimerMillisecondsOverride ?? this.settings.turnSeconds * 1_000;
+  }
+
+  private armTurnTimer(durationMs = this.configuredTurnDurationMs()): void {
     this.clearTurnTimer();
     if (
       durationMs <= 0 ||
       this.game === null ||
-      this.game.phase === "starter-place" ||
       this.game.phase === "game-over" ||
       this.droppedPlayerIds.size > 0
     ) {
@@ -738,7 +744,7 @@ export class CipherDeckRoom extends Room<{
       return;
     }
     const remaining = this.pausedTurnRemainingMs;
-    this.armTurnTimer(remaining ?? this.settings.turnSeconds * 1_000);
+    this.armTurnTimer(remaining ?? this.configuredTurnDurationMs());
   }
 
   private handleTurnTimeout(): void {
@@ -754,8 +760,13 @@ export class CipherDeckRoom extends Room<{
       }
       void this.updateStatus();
       this.broadcastState();
-    } catch {
+    } catch (error) {
+      console.error("CipherDeck turn timeout resolution failed.", error);
       this.clearTurnTimer();
+      if (this.game.phase !== "game-over") {
+        this.armTurnTimer();
+        this.broadcastState();
+      }
     }
   }
 
@@ -772,11 +783,10 @@ export class CipherDeckRoom extends Room<{
       return;
     }
     try {
-      const previousTurn = this.game.turn;
       this.game = transition(this.game, this.userId(client));
       if (this.game.phase === "game-over") {
         this.clearTurnTimer();
-      } else if (this.game.turn !== previousTurn) {
+      } else {
         this.armTurnTimer();
       }
       void this.updateStatus();
@@ -848,7 +858,6 @@ export class CipherDeckRoom extends Room<{
         card: revealCard(card),
       })),
       starterPlayerId: selection.starterPlayerId,
-      pendingJokerPlayerIds: this.game?.pendingStartingJokerPlayerIds ?? [],
     };
   }
 

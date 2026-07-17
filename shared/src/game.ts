@@ -137,7 +137,7 @@ function createGame(
   }
 
   const startingCardIds: Record<string, string> = {};
-  const pendingStartingJokerPlayerIds: string[] = [];
+  const pendingStartingJokerCardIdsByPlayer: Record<string, string[]> = {};
   const players: PlayerState[] = playerIds.map((id, index) => {
     let rack = sortRackKeepingJokers(racks[index] ?? []);
     const assignment = options.startingCards.find((candidate) => candidate.playerId === id);
@@ -147,7 +147,6 @@ function createGame(
       startingCardIds[id] = startingCard.id;
       if (startingCard.kind === "joker") {
         rack = insertCard(rack, startingCard, rack.length);
-        pendingStartingJokerPlayerIds.push(id);
       } else {
         const insertionIndex = validInsertionIndexes(rack, startingCard)[0];
         if (insertionIndex === undefined) {
@@ -155,6 +154,12 @@ function createGame(
         }
         rack = insertCard(rack, startingCard, insertionIndex);
       }
+    }
+    const jokerCardIds = rack
+      .filter((card) => card.kind === "joker")
+      .map((card) => card.id);
+    if (jokerCardIds.length > 0) {
+      pendingStartingJokerCardIdsByPlayer[id] = jokerCardIds;
     }
     return { id, rack, eliminated: false };
   });
@@ -169,12 +174,16 @@ function createGame(
     players,
     drawPile,
     currentPlayerIndex: startingPlayerIndex,
-    phase: pendingStartingJokerPlayerIds.length > 0 ? "starter-place" : "draw",
+    phase: Object.values(pendingStartingJokerCardIdsByPlayer).some(
+      (cardIds) => cardIds.length > 0,
+    )
+      ? "starter-place"
+      : "draw",
     pendingDraw: null,
     drawnCardId: null,
     correctGuessesThisTurn: 0,
     startingCardIds,
-    pendingStartingJokerPlayerIds,
+    pendingStartingJokerCardIdsByPlayer,
     winnerId: null,
     turn: 1,
   };
@@ -228,6 +237,14 @@ function assertActor(state: GameState, actorId: string): PlayerState {
   return actor;
 }
 
+export function hasPendingStartingJokerPlacements(
+  state: GameState,
+): boolean {
+  return Object.values(state.pendingStartingJokerCardIdsByPlayer).some(
+    (cardIds) => cardIds.length > 0,
+  );
+}
+
 export function placeStartingJoker(
   state: GameState,
   playerId: string,
@@ -235,83 +252,65 @@ export function placeStartingJoker(
 ): GameState {
   if (
     state.phase !== "starter-place" ||
-    !state.pendingStartingJokerPlayerIds.includes(playerId)
+    (state.pendingStartingJokerCardIdsByPlayer[playerId]?.length ?? 0) === 0
   ) {
     throw new RuleViolation(
       "WRONG_PHASE",
-      "This player does not have a starting Joker awaiting placement.",
+      "This player does not have an opening-hand Joker awaiting placement.",
     );
   }
   const next = cloneState(state);
   const player = next.players.find((candidate) => candidate.id === playerId);
-  const startingCardId = next.startingCardIds[playerId];
-  if (player === undefined || startingCardId === undefined) {
-    throw new RuleViolation("INVALID_TARGET", "The starting Joker could not be found.");
+  const pendingCardIds = next.pendingStartingJokerCardIdsByPlayer[playerId] ?? [];
+  const jokerCardId = pendingCardIds[0];
+  if (player === undefined || jokerCardId === undefined) {
+    throw new RuleViolation("INVALID_TARGET", "The opening-hand Joker could not be found.");
   }
-  const currentIndex = player.rack.findIndex((card) => card.id === startingCardId);
+  const currentIndex = player.rack.findIndex((card) => card.id === jokerCardId);
   const joker = player.rack[currentIndex];
-  if (currentIndex < 0 || joker?.kind !== "joker" || !joker.revealed) {
-    throw new RuleViolation("INVALID_TARGET", "The starting card is not a revealed Joker.");
+  if (currentIndex < 0 || joker?.kind !== "joker") {
+    throw new RuleViolation("INVALID_TARGET", "The pending opening-hand card is not a Joker.");
   }
-  const rackWithoutJoker = player.rack.toSpliced(currentIndex, 1);
-  player.rack = insertCard(rackWithoutJoker, joker, rackIndex);
-  next.pendingStartingJokerPlayerIds = next.pendingStartingJokerPlayerIds.filter(
-    (candidate) => candidate !== playerId,
+  const pendingIdSet = new Set(pendingCardIds);
+  const placedRack = player.rack.filter((card) => !pendingIdSet.has(card.id));
+  const remainingPendingCards = player.rack.filter(
+    (card) => pendingIdSet.has(card.id) && card.id !== jokerCardId,
   );
-  if (next.pendingStartingJokerPlayerIds.length === 0) {
+  player.rack = [
+    ...insertCard(placedRack, joker, rackIndex),
+    ...remainingPendingCards,
+  ];
+  const remainingCardIds = pendingCardIds.slice(1);
+  if (remainingCardIds.length === 0) {
+    delete next.pendingStartingJokerCardIdsByPlayer[playerId];
+  } else {
+    next.pendingStartingJokerCardIdsByPlayer[playerId] = remainingCardIds;
+  }
+  if (!hasPendingStartingJokerPlacements(next)) {
     next.phase = "draw";
   }
   return next;
 }
 
-function randomIndex(length: number, random: RandomSource): number {
-  const value = random();
-  if (!Number.isFinite(value) || value < 0 || value >= 1) {
-    throw new RuleViolation("INVALID_RANDOM_VALUE", "Random sources must return a value in [0, 1). ");
+export function resolveTurnTimeout(state: GameState, _random: RandomSource): GameState {
+  if (state.phase === "game-over") {
+    throw new RuleViolation("WRONG_PHASE", "A turn timer is not active after the game ends.");
   }
-  return Math.floor(value * length);
-}
-
-export function resolveTurnTimeout(state: GameState, random: RandomSource): GameState {
-  if (state.phase === "starter-place" || state.phase === "game-over") {
-    throw new RuleViolation("WRONG_PHASE", "A normal turn timer is not active in this phase.");
-  }
-  const next = cloneState(state);
-  const actor = currentPlayer(next);
-
-  if (next.pendingDraw !== null) {
-    next.pendingDraw.revealed = true;
-    const insertionIndexes = validInsertionIndexes(actor.rack, next.pendingDraw);
-    const rackIndex = insertionIndexes[0];
-    if (rackIndex === undefined) {
-      throw new RuleViolation("INVALID_INSERTION", "The timed-out card has no legal rack slot.");
-    }
-    actor.rack = insertCard(actor.rack, next.pendingDraw, rackIndex);
-    next.drawnCardId = next.pendingDraw.id;
-    next.pendingDraw = null;
-    updateEndGame(next);
-    if ((next.phase as GameState["phase"]) !== "game-over") {
-      advanceTurn(next);
+  if (state.phase === "starter-place") {
+    let next = cloneState(state);
+    const timedOutPlayerIds = Object.entries(next.pendingStartingJokerCardIdsByPlayer)
+      .filter(([, cardIds]) => cardIds.length > 0)
+      .map(([playerId]) => playerId);
+    for (const playerId of timedOutPlayerIds) {
+      if (next.phase === "game-over") break;
+      const player = next.players.find((candidate) => candidate.id === playerId);
+      if (player !== undefined && !player.eliminated) {
+        next = forfeitPlayer(next, playerId);
+      }
     }
     return next;
   }
-
-  if (next.phase === "guess" || next.phase === "self-penalty") {
-    const unrevealed = actor.rack.filter((card) => !card.revealed);
-    const penalty = unrevealed[randomIndex(unrevealed.length, random)];
-    if (penalty === undefined) {
-      throw new RuleViolation("INVALID_TARGET", "No unrevealed card is available for timeout penalty.");
-    }
-    penalty.revealed = true;
-    updateEndGame(next);
-    if ((next.phase as GameState["phase"]) !== "game-over") {
-      advanceTurn(next);
-    }
-    return next;
-  }
-
-  advanceTurn(next);
-  return next;
+  return forfeitPlayer(state, currentPlayer(state).id);
 }
 
 export function drawCard(state: GameState, actorId: string): GameState {
@@ -513,9 +512,7 @@ export function forfeitPlayer(state: GameState, playerId: string): GameState {
   }
   const wasStartingJokerPlacement = next.phase === "starter-place";
   if (wasStartingJokerPlacement) {
-    next.pendingStartingJokerPlayerIds = next.pendingStartingJokerPlayerIds.filter(
-      (candidate) => candidate !== playerId,
-    );
+    delete next.pendingStartingJokerCardIdsByPlayer[playerId];
   }
   for (const card of player.rack) {
     card.revealed = true;
@@ -532,7 +529,7 @@ export function forfeitPlayer(state: GameState, playerId: string): GameState {
         }
       }
     }
-    next.phase = next.pendingStartingJokerPlayerIds.length > 0 ? "starter-place" : "draw";
+    next.phase = hasPendingStartingJokerPlacements(next) ? "starter-place" : "draw";
     return next;
   }
   if (next.phase !== "game-over" && playerIndex === next.currentPlayerIndex) {

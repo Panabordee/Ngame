@@ -154,12 +154,21 @@ try {
           (state.startingSelection?.phase === "choosing" && state.startingSelection.round > round),
       );
     } else if (selection?.phase === "joker-placement") {
-      const playing = waitForStateWhere(ownerRoom, (state) => state.status === "playing");
-      for (const playerId of setupState.game?.pendingStartingJokerPlayerIds ?? []) {
-        const roomIndex = players.findIndex((player) => player.userId === playerId);
-        rooms[roomIndex]?.send("place-starting-joker", { rackIndex: 0 });
+      for (const room of rooms) {
+        let playerState = await requestState(room);
+        while ((playerState.game?.pendingStartingJokerCardIds.length ?? 0) > 0) {
+          const pendingCount = playerState.game?.pendingStartingJokerCardIds.length ?? 0;
+          const placed = waitForStateWhere(
+            room,
+            (state) =>
+              (state.game?.pendingStartingJokerCardIds.length ?? 0) < pendingCount,
+          );
+          room.send("place-starting-joker", { rackIndex: 0 });
+          playerState = await placed;
+          setupState = playerState;
+        }
       }
-      setupState = await playing;
+      if (setupState.status !== "playing") setupState = await requestState(ownerRoom);
     }
   }
   assert.equal(setupState.status, "playing");

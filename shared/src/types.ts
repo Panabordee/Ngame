@@ -62,7 +62,7 @@ export interface GameState {
   drawnCardId: string | null;
   correctGuessesThisTurn: number;
   startingCardIds: Record<string, string>;
-  pendingStartingJokerPlayerIds: string[];
+  pendingStartingJokerCardIdsByPlayer: Record<string, string[]>;
   winnerId: string | null;
   turn: number;
 }
