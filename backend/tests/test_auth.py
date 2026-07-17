@@ -12,6 +12,7 @@ GOOGLE_USER = {
     "email": "google@example.com",
     "email_verified": True,
     "name": "Google Player",
+    "picture": "https://images.example/google-player.png",
 }
 
 
@@ -56,12 +57,59 @@ def test_google_callback_creates_session_access_token_and_profile(
     assert payload["expires_in"] == 900
     assert payload["user"]["email"] == "google@example.com"
     assert payload["user"]["display_name"] == "Google Player"
+    assert payload["user"]["username"] is None
+    assert payload["user"]["avatar_url"] == "https://images.example/google-player.png"
 
     profile = client.get(
         "/auth/me", headers={"Authorization": f"Bearer {payload['access_token']}"}
     )
     assert profile.status_code == 200
     assert profile.json()["id"] == payload["user"]["id"]
+
+
+def test_player_can_set_profile_and_username_must_be_unique(client: TestClient) -> None:
+    first = complete_google_login(client)
+    token = first.json()["access_token"]
+    updated = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"display_name": "  Cipher   Fox  ", "username": "Cipher_Fox"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "Cipher Fox"
+    assert updated.json()["username"] == "cipher_fox"
+
+    client.cookies.clear()
+    configure_google(
+        client,
+        SuccessfulGoogleClient(
+            {
+                "sub": "google-subject-2",
+                "email": "second@example.com",
+                "email_verified": True,
+                "name": "Second Player",
+            }
+        ),
+    )
+    callback = client.get("/auth/google/callback", follow_redirects=False)
+    assert callback.status_code == 303
+    second = client.post("/auth/refresh")
+    conflict = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {second.json()['access_token']}"},
+        json={"display_name": "Second Player", "username": "CIPHER_FOX"},
+    )
+    assert conflict.status_code == 409
+
+
+def test_profile_rejects_invalid_username(client: TestClient) -> None:
+    response = complete_google_login(client)
+    rejected = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+        json={"display_name": "Player", "username": "not allowed!"},
+    )
+    assert rejected.status_code == 422
 
 
 def test_refresh_token_rotates_and_old_token_is_rejected(client: TestClient) -> None:
@@ -175,6 +223,7 @@ async def test_google_identity_is_stable_and_rejects_email_collisions(
             email="google@example.com",
             email_verified=True,
             display_name="Google Player",
+            avatar_url=None,
             settings=settings,
             user_agent="test",
             ip_address="127.0.0.1",
@@ -188,6 +237,7 @@ async def test_google_identity_is_stable_and_rejects_email_collisions(
             email="google@example.com",
             email_verified=True,
             display_name="Changed Provider Name",
+            avatar_url=None,
             settings=settings,
             user_agent="test",
             ip_address="127.0.0.1",
@@ -200,6 +250,7 @@ async def test_google_identity_is_stable_and_rejects_email_collisions(
                 email="google@example.com",
                 email_verified=True,
                 display_name="Collision",
+                avatar_url=None,
                 settings=settings,
                 user_agent="test",
                 ip_address="127.0.0.1",

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings
@@ -20,6 +21,10 @@ class AuthenticationError(Exception):
 
 
 class IdentityConflictError(Exception):
+    pass
+
+
+class UsernameConflictError(Exception):
     pass
 
 
@@ -72,7 +77,7 @@ async def _new_session(
         )
     )
     return SessionTokens(
-        access_token=create_access_token(user.id, settings),
+        access_token=create_access_token(user, settings),
         refresh_token=refresh_token,
         user=user,
         identity=identity,
@@ -149,6 +154,7 @@ async def authenticate_google_user(
     email: str,
     email_verified: bool,
     display_name: str,
+    avatar_url: str | None,
     settings: Settings,
     user_agent: str | None,
     ip_address: str | None,
@@ -163,7 +169,10 @@ async def authenticate_google_user(
         )
         if collision is not None:
             raise IdentityConflictError
-        user = User(display_name=display_name[:32] or "Player")
+        user = User(
+            display_name=display_name[:32] or "Player",
+            avatar_url=avatar_url[:2048] if avatar_url else None,
+        )
         session.add(user)
         await session.flush()
         identity = AuthIdentity(
@@ -179,6 +188,24 @@ async def authenticate_google_user(
         user = await _user_by_id(session, identity.user_id)
         if user is None or user.status != "active":
             raise AuthenticationError
+        if avatar_url:
+            user.avatar_url = avatar_url[:2048]
     return await _new_session(
         session, user, identity, settings, user_agent, ip_address
     )
+
+
+async def update_user_profile(
+    session: AsyncSession,
+    user: User,
+    *,
+    display_name: str,
+    username: str,
+) -> User:
+    user.display_name = display_name
+    user.username = username
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise UsernameConflictError from exc
+    return user

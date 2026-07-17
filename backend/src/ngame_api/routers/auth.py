@@ -9,14 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import Settings
 from ..dependencies import get_current_profile, get_session, get_settings
 from ..models import AuthIdentity, User
-from ..schemas import AuthResponse, MessageResponse, UserResponse
+from ..schemas import AuthResponse, MessageResponse, UserResponse, UserUpdateRequest
 from ..services import (
     AuthenticationError,
     IdentityConflictError,
     SessionTokens,
+    UsernameConflictError,
     authenticate_google_user,
     revoke_refresh_session,
     rotate_refresh_session,
+    update_user_profile,
 )
 
 
@@ -67,6 +69,8 @@ def _auth_response(tokens: SessionTokens, settings: Settings) -> AuthResponse:
         user=UserResponse(
             id=tokens.user.id,
             display_name=tokens.user.display_name,
+            username=tokens.user.username,
+            avatar_url=tokens.user.avatar_url,
             email=tokens.identity.email,
             email_verified=tokens.identity.email_verified,
         ),
@@ -128,6 +132,39 @@ async def me(
     return UserResponse(
         id=user.id,
         display_name=user.display_name,
+        username=user.username,
+        avatar_url=user.avatar_url,
+        email=identity.email,
+        email_verified=identity.email_verified,
+    )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    payload: UserUpdateRequest,
+    profile: Annotated[tuple[User, AuthIdentity], Depends(get_current_profile)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserResponse:
+    user, identity = profile
+    try:
+        await update_user_profile(
+            session,
+            user,
+            display_name=payload.display_name,
+            username=payload.username,
+        )
+        await session.commit()
+    except UsernameConflictError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username is already in use.",
+        ) from None
+    return UserResponse(
+        id=user.id,
+        display_name=user.display_name,
+        username=user.username,
+        avatar_url=user.avatar_url,
         email=identity.email,
         email_verified=identity.email_verified,
     )
@@ -166,6 +203,7 @@ async def google_callback(
         ):
             raise AuthenticationError
         provider_name = user_info.get("name")
+        provider_picture = user_info.get("picture")
         display_name = (
             provider_name
             if isinstance(provider_name, str) and provider_name.strip()
@@ -178,6 +216,7 @@ async def google_callback(
             email=email,
             email_verified=user_info.get("email_verified") is True,
             display_name=display_name,
+            avatar_url=provider_picture if isinstance(provider_picture, str) else None,
             settings=settings,
             user_agent=user_agent,
             ip_address=ip_address,

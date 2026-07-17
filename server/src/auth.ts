@@ -6,6 +6,7 @@ import type { ServerConfig } from "./config.ts";
 
 export interface AuthenticatedUser {
   readonly userId: string;
+  readonly displayName: string;
 }
 
 export type Authenticator = (token: string) => Promise<AuthenticatedUser>;
@@ -23,9 +24,17 @@ export function createJwtAuthenticator(config: ServerConfig): Authenticator {
       audience: config.jwtAudience,
       requiredClaims: ["sub", "iss", "aud", "iat", "exp", "jti", "typ"],
     });
-    if (verified.payload.typ !== "access" || typeof verified.payload.sub !== "string") {
+    if (
+      verified.payload.typ !== "access" ||
+      typeof verified.payload.sub !== "string" ||
+      typeof verified.payload.name !== "string" ||
+      verified.payload.name.trim().length === 0
+    ) {
       throw new Error("Invalid access token claims.");
     }
-    return { userId: verified.payload.sub };
+    return {
+      userId: verified.payload.sub,
+      displayName: verified.payload.name.trim().slice(0, 32),
+    };
   };
 }

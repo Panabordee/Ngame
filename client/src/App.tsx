@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Client, type Room } from "@colyseus/sdk";
 import {
-  RANKS,
   type CardColor,
   type Rank,
   type RoomErrorMessage,
@@ -12,6 +11,7 @@ import {
   logout,
   refresh,
   startGoogleLogin,
+  updateProfile,
   type AuthResponse,
 } from "./auth.ts";
 import { GameTable } from "./GameTable.tsx";
@@ -21,17 +21,15 @@ const REALTIME_URL = import.meta.env.VITE_REALTIME_URL ?? "http://localhost:2567
 interface GuessForm {
   targetPlayerId: string;
   targetCardId: string;
-  kind: "standard" | "joker";
-  rank: Rank;
-  color: CardColor;
+  rank: Rank | "JOKER" | null;
+  color: CardColor | null;
 }
 
 const INITIAL_GUESS: GuessForm = {
   targetPlayerId: "",
   targetCardId: "",
-  kind: "standard",
-  rank: "A",
-  color: "red",
+  rank: null,
+  color: null,
 };
 
 type JoinMode = "quick" | "create-code" | "join-code";
@@ -55,6 +53,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [guess, setGuess] = useState<GuessForm>(INITIAL_GUESS);
   const [selectedPenaltyCardId, setSelectedPenaltyCardId] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const game = state?.game ?? null;
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
@@ -65,6 +67,8 @@ export function App() {
     game?.phase === "guess" &&
     guess.targetPlayerId.length > 0 &&
     guess.targetCardId.length > 0 &&
+    guess.rank !== null &&
+    (guess.rank === "JOKER" || guess.color !== null) &&
     state?.status === "playing";
   const canStopAndPlace =
     room !== null &&
@@ -196,12 +200,36 @@ export function App() {
     room?.send("guess", {
       targetPlayerId: guess.targetPlayerId,
       targetCardId: guess.targetCardId,
-      guess:
-        guess.kind === "joker"
-          ? { kind: "joker" }
-          : { kind: "standard", rank: guess.rank, color: guess.color },
+      guess: guess.rank === "JOKER"
+        ? { kind: "joker" }
+        : { kind: "standard", rank: guess.rank, color: guess.color },
     });
-    setGuess((current) => ({ ...current, targetPlayerId: "", targetCardId: "" }));
+    setGuess(INITIAL_GUESS);
+  }
+
+  function openProfile(): void {
+    if (auth === null) return;
+    setProfileName(auth.user.display_name);
+    setProfileUsername(auth.user.username ?? "");
+    setProfileOpen(true);
+  }
+
+  async function saveProfile(): Promise<void> {
+    if (auth === null) return;
+    setProfileSaving(true);
+    setError(null);
+    try {
+      const user = await updateProfile(auth.access_token, {
+        display_name: profileName,
+        username: profileUsername,
+      });
+      setAuth({ ...auth, user });
+      setProfileOpen(false);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   if (!authReady) {
@@ -247,12 +275,43 @@ export function App() {
           {connectionStatus}
           {state !== null && <span className={`match-status match-${state.status}`}>{state.status}</span>}
         </div>
-        <div className="profile-chip">
-          <span>{auth.user.display_name.slice(0, 1).toUpperCase()}</span>
-          <div><strong>{auth.user.display_name}</strong><small>{auth.user.email}</small></div>
+          <div className="profile-chip">
+            <span>{auth.user.display_name.slice(0, 1).toUpperCase()}</span>
+          <div><strong>{auth.user.display_name}</strong><small>{auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small></div>
+          <button type="button" onClick={openProfile}>Profile</button>
           <button type="button" onClick={() => void signOut()}>Sign out</button>
         </div>
       </header>
+
+      {profileOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setProfileOpen(false)}>
+          <form
+            className="profile-modal"
+            aria-label="Player profile"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveProfile();
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <span className="eyebrow">PLAYER PROFILE</span>
+            <h2>Choose how players see you</h2>
+            <label>
+              Display name
+              <input required minLength={1} maxLength={32} value={profileName} onChange={(event) => setProfileName(event.target.value)} />
+            </label>
+            <label>
+              Username
+              <input required minLength={3} maxLength={20} pattern="[A-Za-z0-9_]+" value={profileUsername} onChange={(event) => setProfileUsername(event.target.value)} placeholder="cipher_player" />
+              <small>3–20 characters: letters, numbers, and underscore.</small>
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setProfileOpen(false)}>Cancel</button>
+              <button type="submit" className="primary-button" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {error !== null && <div className="error-banner floating-error"><span>{error}</span><button onClick={() => setError(null)}>×</button></div>}
 
@@ -261,7 +320,7 @@ export function App() {
           <div className="lobby-card">
             <span className="eyebrow">AUTHORITATIVE MULTIPLAYER</span>
             <h1>Enter the table</h1>
-            <p>Choose a fixed room size. The match begins automatically when every seat is filled.</p>
+            <p>Choose a room size. The host starts the match when everyone is ready.</p>
             <div className="player-count-picker">
               {[3, 4, 5, 6].map((count) => (
                 <button key={count} className={desiredPlayers === count ? "is-active" : ""} onClick={() => setDesiredPlayers(count)}>
@@ -273,7 +332,10 @@ export function App() {
               <button className="primary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("quick")}>Quick Match</button>
               <button className="secondary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("create-code")}>Create room code</button>
             </div>
-            <div className="room-code-join">
+            <form className="room-code-join" onSubmit={(event) => {
+              event.preventDefault();
+              void joinRoom("join-code");
+            }}>
               <label htmlFor="room-code">Join a numbered room</label>
               <div>
                 <input
@@ -284,9 +346,9 @@ export function App() {
                   value={roomCode}
                   onChange={(event) => setRoomCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 />
-                <button className="secondary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("join-code")}>Join code</button>
+                <button type="submit" className="secondary-button" disabled={connectionStatus === "connecting"}>Join code</button>
               </div>
-            </div>
+            </form>
           </div>
           <aside className="rules-glance">
             <h2>At a glance</h2>
@@ -309,7 +371,6 @@ export function App() {
               )}
             </div>
             <div className="toolbar-actions">
-              <button className="secondary-button" onClick={() => room.send("sync")}>Sync</button>
               <button className="danger-button" onClick={() => void room.leave(true)}>Leave room</button>
             </div>
           </section>
@@ -320,10 +381,17 @@ export function App() {
                 game={game}
                 viewerId={auth.user.id}
                 viewerName={auth.user.display_name}
+                playerNames={Object.fromEntries((state?.players ?? []).map((player) => [player.id, player.displayName]))}
                 actionsEnabled={state?.status === "playing"}
                 selectedTargetCardId={guess.targetCardId}
                 selectedPenaltyCardId={selectedPenaltyCardId}
-                onSelectTarget={(targetPlayerId, targetCardId) => setGuess((current) => ({ ...current, targetPlayerId, targetCardId }))}
+                guessRank={guess.rank}
+                guessColor={guess.color}
+                onSelectTarget={(targetPlayerId, targetCardId) => setGuess({ targetPlayerId, targetCardId, rank: null, color: null })}
+                onSelectGuessRank={(rank) => setGuess((current) => ({ ...current, rank, color: null }))}
+                onSelectGuessColor={(color) => setGuess((current) => ({ ...current, color }))}
+                onConfirmGuess={sendGuess}
+                onCancelGuess={() => setGuess(INITIAL_GUESS)}
                 onSelectPenalty={setSelectedPenaltyCardId}
                 onInsert={(rackIndex) => room.send("insert", { rackIndex })}
               />
@@ -341,13 +409,7 @@ export function App() {
                     setSelectedPenaltyCardId("");
                   }}>REVEAL SELECTED</button>
                 </div>
-                <div className="guess-controls">
-                  <span className="target-readout">{guess.targetCardId ? `Target ${guess.targetCardId.slice(0, 8)}` : "Select a face-down opponent card"}</span>
-                  <select value={guess.kind} onChange={(event) => setGuess({ ...guess, kind: event.target.value as GuessForm["kind"] })}><option value="standard">Standard</option><option value="joker">Joker</option></select>
-                  <select value={guess.rank} disabled={guess.kind === "joker"} onChange={(event) => setGuess({ ...guess, rank: event.target.value as Rank })}>{RANKS.map((rank) => <option key={rank}>{rank}</option>)}</select>
-                  <select value={guess.color} disabled={guess.kind === "joker"} onChange={(event) => setGuess({ ...guess, color: event.target.value as CardColor })}><option value="red">Red</option><option value="black">Black</option></select>
-                  <button className="guess-button" disabled={!canGuess} onClick={sendGuess}>LOCK GUESS</button>
-                </div>
+                <p className="target-readout">{guess.targetCardId ? "Finish the guess beside the selected card." : "Select a face-down opponent card to guess."}</p>
               </section>
             </>
           ) : (

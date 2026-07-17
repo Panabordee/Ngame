@@ -324,6 +324,34 @@ summary:focus-visible {
   cursor: pointer;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 8, 7, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.profile-modal {
+  display: grid;
+  width: min(460px, 100%);
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid rgba(223, 186, 112, 0.35);
+  border-radius: 14px;
+  background: #0e1b17;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
+.profile-modal h2 { margin: -8px 0 4px; font-family: Georgia, serif; font-weight: 500; }
+.profile-modal label { display: grid; gap: 7px; color: var(--cream); font-size: 0.78rem; }
+.profile-modal label small { color: var(--muted); }
+.profile-modal input { width: 100%; padding: 12px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
 .floating-error {
   position: fixed;
   z-index: 50;
@@ -622,7 +650,14 @@ summary:focus-visible {
   scrollbar-color: #3c594f transparent;
 }
 
-.opponent-rack .playing-card + .playing-card { margin-left: -28px; }
+.target-card-wrap {
+  position: relative;
+  flex: 0 0 70px;
+}
+
+.opponent-rack .target-card-wrap + .target-card-wrap { margin-left: -28px; }
+.target-card-wrap:has(.is-selected) { z-index: 30; }
+.opponent-rack { overflow: visible; }
 .own-rack { justify-content: center; min-height: 154px; }
 .own-rack .playing-card + .playing-card { margin-left: -18px; }
 .own-rack.is-inserting { justify-content: flex-start; }
@@ -659,6 +694,58 @@ summary:focus-visible {
   box-shadow: 0 0 0 3px rgba(223, 186, 112, 0.35), 0 14px 28px rgba(0, 0, 0, 0.52);
   transform: translateY(-9px);
 }
+
+.guess-popover {
+  position: absolute;
+  top: calc(100% + 15px);
+  left: 50%;
+  z-index: 40;
+  display: grid;
+  width: 290px;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(223, 186, 112, 0.55);
+  border-radius: 10px;
+  color: var(--cream);
+  background: rgba(10, 24, 19, 0.98);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.62);
+  transform: translateX(-50%);
+}
+
+.guess-popover::before {
+  position: absolute;
+  top: -7px;
+  left: calc(50% - 7px);
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid rgba(223, 186, 112, 0.55);
+  border-left: 1px solid rgba(223, 186, 112, 0.55);
+  background: #0a1813;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.guess-popover-header { display: flex; align-items: center; justify-content: space-between; }
+.guess-popover-header strong { font-family: Georgia, serif; font-size: 0.86rem; }
+.guess-popover-header button { padding: 0 5px; border: 0; color: var(--muted); background: transparent; font-size: 1.1rem; }
+.rank-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.rank-grid button,
+.color-picker button {
+  min-height: 32px;
+  padding: 5px;
+  border: 1px solid #385248;
+  color: var(--cream);
+  background: #142820;
+}
+.rank-grid button:hover,
+.rank-grid button.is-active,
+.color-picker button.is-active { border-color: var(--gold); background: #294538; }
+.rank-grid .joker-rank { grid-column: span 7; color: var(--gold); }
+.color-picker { display: grid; grid-template-columns: 1fr 64px 64px; align-items: center; gap: 6px; }
+.color-picker span { color: var(--muted); font-size: 0.7rem; }
+.color-picker .color-red { color: #ff9a91; }
+.color-picker .color-black { color: #eef5f1; background: #070c0a; }
+.confirm-guess { width: 100%; }
 
 .card-back-art {
   display: block;
@@ -820,7 +907,7 @@ summary:focus-visible {
 
 .control-dock {
   display: grid;
-  grid-template-columns: minmax(190px, 0.65fr) auto minmax(540px, 1.8fr);
+  grid-template-columns: minmax(190px, 0.65fr) auto minmax(220px, 1fr);
   align-items: center;
   gap: 20px;
   margin-top: 14px;
@@ -870,13 +957,6 @@ summary:focus-visible {
   background: rgba(92, 26, 23, 0.35);
 }
 
-.guess-controls {
-  display: grid;
-  grid-template-columns: minmax(170px, 1fr) 105px 72px 88px 130px;
-  align-items: center;
-  gap: 8px;
-}
-
 .target-readout {
   overflow: hidden;
   color: var(--muted);
@@ -884,8 +964,6 @@ summary:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.guess-controls select { padding: 10px; }
 .guess-button { padding: 11px; color: #e8fff6; background: linear-gradient(135deg, #168563, #0a5c47); }
 
 .waiting-room {
@@ -904,6 +982,6 @@ summary:focus-visible {
 
 @media (max-width: 1180px) {
   .control-dock { grid-template-columns: 1fr auto; }
-  .guess-controls { grid-column: 1 / -1; }
+  .target-readout { grid-column: 1 / -1; }
   .auth-panel { padding: 55px; }
 }

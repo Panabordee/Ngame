@@ -10,6 +10,7 @@ import jwt
 from jwt import InvalidTokenError
 
 from .config import Settings
+from .models import User
 
 
 def normalize_email(email: str) -> str:
@@ -29,10 +30,11 @@ def _read_key(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def create_access_token(user_id: UUID, settings: Settings) -> str:
+def create_access_token(user: User, settings: Settings) -> str:
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
-        "sub": str(user_id),
+        "sub": str(user.id),
+        "name": user.display_name,
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
         "iat": now,
@@ -40,6 +42,8 @@ def create_access_token(user_id: UUID, settings: Settings) -> str:
         "jti": str(uuid4()),
         "typ": "access",
     }
+    if user.username is not None:
+        payload["preferred_username"] = user.username
     return jwt.encode(
         payload,
         _read_key(settings.jwt_private_key_file),

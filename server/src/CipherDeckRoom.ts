@@ -293,6 +293,11 @@ export class CipherDeckRoom extends Room<{
       lobbyMode: this.lobbyMode,
       roomCode: this.roomCode,
       connectedPlayers: this.clients.length,
+      players: this.clients.map((connected) => ({
+        id: this.userId(connected),
+        displayName: this.displayName(connected),
+        connected: !this.droppedPlayerIds.has(this.userId(connected)),
+      })),
       droppedPlayerIds: [...this.droppedPlayerIds],
       game: this.game === null ? null : projectStateForPlayer(this.game, userId),
     });
@@ -308,6 +313,14 @@ export class CipherDeckRoom extends Room<{
       throw new ServerError(401, "Authenticated user is missing.");
     }
     return userId;
+  }
+
+  private displayName(client: CipherClient): string {
+    const displayName = client.auth?.displayName;
+    if (typeof displayName !== "string" || displayName.trim().length === 0) {
+      return `Player · ${this.userId(client).slice(0, 4).toUpperCase()}`;
+    }
+    return displayName.trim().slice(0, 32);
   }
 
   private isEliminated(userId: string): boolean {

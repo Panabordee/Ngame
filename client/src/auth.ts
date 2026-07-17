@@ -1,6 +1,8 @@
 export interface AuthUser {
   readonly id: string;
   readonly display_name: string;
+  readonly username: string | null;
+  readonly avatar_url: string | null;
   readonly email: string | null;
   readonly email_verified: boolean;
 }
@@ -32,6 +34,26 @@ async function authRequest(path: string, init: RequestInit): Promise<AuthRespons
 
 export function refresh(): Promise<AuthResponse> {
   return authRequest("/auth/refresh", { method: "POST" });
+}
+
+export async function updateProfile(
+  accessToken: string,
+  profile: { readonly display_name: string; readonly username: string },
+): Promise<AuthUser> {
+  const response = await fetch(`${API_URL}/auth/me`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(profile),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Profile update failed (${response.status}).`);
+  }
+  return (await response.json()) as AuthUser;
 }
 
 export async function logout(): Promise<void> {

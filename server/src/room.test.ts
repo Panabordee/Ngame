@@ -35,7 +35,7 @@ before(async () => {
       if (!token.startsWith("user-")) {
         throw new Error("Invalid test credential.");
       }
-      return { userId: token };
+      return { userId: token, displayName: `Player ${token.slice(5)}` };
     }),
   );
 });
@@ -175,6 +175,10 @@ test("three authenticated clients can play without leaking hidden cards", async 
 
   assert.equal(envelope1.status, "playing");
   assert.equal(envelope1.connectedPlayers, 3);
+  assert.equal(
+    envelope1.players.find((player) => player.id === "user-2")?.displayName,
+    "Player 2",
+  );
   const view1 = ownView(envelope1, "user-1");
   const view2 = ownView(envelope2, "user-2");
   assert.equal(view1.currentPlayerId, "user-1");

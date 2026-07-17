@@ -16,6 +16,8 @@ class User(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     display_name: Mapped[str] = mapped_column(String(32))
+    username: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
