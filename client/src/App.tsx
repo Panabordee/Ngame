@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Client, type Room } from "@colyseus/sdk";
 import {
   RANKS,
@@ -61,7 +61,6 @@ export function App() {
   const [guess, setGuess] = useState<GuessForm>(INITIAL_GUESS);
   const [selectedPenaltyCardId, setSelectedPenaltyCardId] = useState("");
 
-  const prettyState = useMemo(() => JSON.stringify(state, null, 2), [state]);
   const game = state?.game ?? null;
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
   const canDraw = room !== null && isMyTurn && game?.phase === "draw" && state?.status === "playing";
@@ -370,11 +369,6 @@ export function App() {
               <p>The room starts at {state?.desiredPlayers ?? desiredPlayers} players.</p>
             </div>
           )}
-
-          <details className="debug-panel">
-            <summary>Viewer-safe JSON state</summary>
-            <pre>{prettyState || "No state received."}</pre>
-          </details>
         </div>
       )}
     </main>
