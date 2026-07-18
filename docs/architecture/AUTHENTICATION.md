@@ -43,7 +43,7 @@ There are no password registration or login endpoints.
 - `auth_identities`: unique Google subject, unique normalized verified email, provider
 - `refresh_sessions`: hashed opaque token, expiry, revocation, rotation link, client metadata
 
-Guest authentication stores none of these rows. Its identity and expiry are carried in the signed JWT; live one-match room binding belongs to the realtime process.
+Guest authentication stores none of these rows. Its identity and expiry are carried in the signed JWT; its live one-match room binding is stored atomically in Redis when configured.
 
 Migration `20260717_0002` deletes all legacy password users and their refresh sessions, then drops `password_credentials`. Downgrading recreates the empty table but cannot restore deleted accounts.
 
@@ -56,5 +56,5 @@ Migration `20260717_0004` adds the editable username and Google-avatar profile f
 - Mount the private JWT key only into the API container.
 - Keep access JWTs short-lived and refresh cookies `Secure` in production.
 - Guest JWTs must include `account_type=guest`, `guest_session_id`, and expiry. Realtime never trusts a client-supplied player ID or display name.
-- The current in-memory Guest binding matches the single realtime instance. Multi-replica deployment requires a distributed Colyseus matchmaker and shared atomic Guest registry.
+- Guest bindings, registered-player room reservations, and room codes use atomic Redis registries in multi-replica deployments; local development uses in-memory implementations.
 - Add distributed limits for OAuth start/callback, refresh, and matchmaking before a public launch.

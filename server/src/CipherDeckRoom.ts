@@ -57,6 +57,7 @@ import {
   type GuestSessionRegistry,
 } from "./guestSessions.ts";
 import { InMemoryUserRoomRegistry, type UserRoomRegistry } from "./userRoomRegistry.ts";
+import { InMemoryRoomCodeRegistry, type RoomCodeRegistry } from "./roomCodeRegistry.ts";
 import {
   parseGuessMessage,
   parseGuestDisplayNameMessage,
@@ -135,6 +136,7 @@ export class CipherDeckRoom extends Room<{
 
   static guestSessions: GuestSessionRegistry = new InMemoryGuestSessionRegistry();
   static userRooms: UserRoomRegistry = new InMemoryUserRoomRegistry();
+  static roomCodes: RoomCodeRegistry = new InMemoryRoomCodeRegistry();
 
   static runtimeConfig: Pick<
     ServerConfig,
@@ -149,8 +151,6 @@ export class CipherDeckRoom extends Room<{
   static turnTimerMillisecondsOverride: number | null = null;
   static distributedRateLimiter: { hincrbyex(key: string, field: string, value: number, expireInSeconds: number): Promise<number> } | null = null;
   static recoveryStore: { setex(key: string, value: string, seconds: number): Promise<unknown> } | null = null;
-
-  private static readonly activeRoomCodes = new Set<string>();
 
   state = new PublicRoomState();
   private desiredPlayers = 0;
@@ -212,7 +212,11 @@ export class CipherDeckRoom extends Room<{
     }
     this.desiredPlayers = desiredPlayers;
     this.lobbyMode = lobbyMode;
-    this.roomCode = lobbyMode === "code" ? CipherDeckRoom.reserveRoomCode() : null;
+    try {
+      this.roomCode = lobbyMode === "code" ? await CipherDeckRoom.roomCodes.allocate(this.roomId) : null;
+    } catch {
+      throw new ServerError(503, "Unable to allocate a room code. Please try again.");
+    }
     this.maxClients = desiredPlayers + 20;
     this.maxMessagesPerSecond = CipherDeckRoom.runtimeConfig.maxMessagesPerSecond;
     await this.updateStatus();
@@ -339,13 +343,11 @@ export class CipherDeckRoom extends Room<{
     this.clearStartingChoiceTimer();
     this.clearTurnTimer();
     this.clearBotTimer();
-    if (this.roomCode !== null) {
-      CipherDeckRoom.activeRoomCodes.delete(this.roomCode);
-    }
-    for (const guestSessionId of this.reservedGuestSessionIds) {
-      CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId);
-    }
-    await Promise.all([...this.reservedUserIds].map((userId) => CipherDeckRoom.userRooms.release(userId, this.roomId)));
+    if (this.roomCode !== null) await CipherDeckRoom.roomCodes.release(this.roomCode, this.roomId);
+    await Promise.all([
+      ...[...this.reservedGuestSessionIds].map((guestSessionId) => CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId)),
+      ...[...this.reservedUserIds].map((userId) => CipherDeckRoom.userRooms.release(userId, this.roomId)),
+    ]);
   }
 
   async onJoin(client: CipherClient, options: RoomOptions): Promise<void> {
@@ -359,7 +361,7 @@ export class CipherDeckRoom extends Room<{
       this.sendState(client);
       return;
     }
-    const reservation = this.reserveGuestSession(client);
+    const reservation = await this.reserveGuestSession(client);
     if (reservation === "conflict") {
       client.error(409, "This guest session is already assigned to another match.");
       client.leave(4003);
@@ -368,7 +370,7 @@ export class CipherDeckRoom extends Room<{
     const userId = this.userId(client);
     const userReservation = await CipherDeckRoom.userRooms.reserve(userId, this.roomId);
     if (userReservation === "conflict") {
-      if (reservation === "created") this.releaseGuestReservation(client);
+      if (reservation === "created") await this.releaseGuestReservation(client);
       client.error(409, "This account is already playing in another room.");
       client.leave(4003);
       return;
@@ -376,7 +378,7 @@ export class CipherDeckRoom extends Room<{
     this.reservedUserIds.add(userId);
     if (client.auth?.accountType === "registered") this.registeredPlayerIds.add(userId);
     if (this.clients.filter((connected) => !this.spectatorSessionIds.has(connected.sessionId)).length > this.desiredPlayers) {
-      if (reservation === "created") this.releaseGuestReservation(client);
+      if (reservation === "created") await this.releaseGuestReservation(client);
       if (userReservation === "created") await this.releaseUserRoom(userId);
       client.error(409, "Room is full.");
       client.leave(4003);
@@ -386,7 +388,7 @@ export class CipherDeckRoom extends Room<{
       (connected) => connected !== client && connected.auth?.userId === userId,
     );
     if (duplicate || this.game !== null || this.startingSelection !== null) {
-      if (reservation === "created") this.releaseGuestReservation(client);
+      if (reservation === "created") await this.releaseGuestReservation(client);
       if (userReservation === "created") await this.releaseUserRoom(userId);
       client.error(409, duplicate ? "User is already in this room." : "Match already started.");
       client.leave(4003);
@@ -462,7 +464,7 @@ export class CipherDeckRoom extends Room<{
     if (this.spectatorSessionIds.delete(client.sessionId)) return;
     if (this.game === null || this.game.phase === "game-over") {
       const userId = this.userId(client);
-      this.releaseGuestReservation(client);
+      await this.releaseGuestReservation(client);
       await this.releaseUserRoom(userId);
       if (this.startingSelection === null) this.roomDisplayNames.delete(userId);
       if (this.startingSelection !== null) {
@@ -859,7 +861,7 @@ export class CipherDeckRoom extends Room<{
       return;
     }
     for (const guestSessionId of this.reservedGuestSessionIds) {
-      CipherDeckRoom.guestSessions.commit(guestSessionId, this.roomId);
+      await CipherDeckRoom.guestSessions.commit(guestSessionId, this.roomId);
     }
     this.botPlayerIds.splice(0, this.botPlayerIds.length);
     for (let index = playerClients.length; index < this.desiredPlayers; index += 1) {
@@ -1434,9 +1436,9 @@ export class CipherDeckRoom extends Room<{
     client.send("guest-name-updated", { displayName: normalized });
   }
 
-  private reserveGuestSession(
+  private async reserveGuestSession(
     client: CipherClient,
-  ): "not-guest" | "created" | "same-room" | "conflict" {
+  ): Promise<"not-guest" | "created" | "same-room" | "conflict"> {
     const auth = client.auth;
     if (auth?.accountType !== "guest") return "not-guest";
     if (
@@ -1445,7 +1447,7 @@ export class CipherDeckRoom extends Room<{
     ) {
       return "conflict";
     }
-    const result = CipherDeckRoom.guestSessions.reserve(
+    const result = await CipherDeckRoom.guestSessions.reserve(
       auth.guestSessionId,
       this.roomId,
       auth.expiresAtMs,
@@ -1454,10 +1456,10 @@ export class CipherDeckRoom extends Room<{
     return result;
   }
 
-  private releaseGuestReservation(client: CipherClient): void {
+  private async releaseGuestReservation(client: CipherClient): Promise<void> {
     const guestSessionId = client.auth?.guestSessionId;
     if (client.auth?.accountType !== "guest" || guestSessionId === undefined) return;
-    if (CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId)) {
+    if (await CipherDeckRoom.guestSessions.releaseReservation(guestSessionId, this.roomId)) {
       this.reservedGuestSessionIds.delete(guestSessionId);
     }
   }
@@ -1495,14 +1497,4 @@ export class CipherDeckRoom extends Room<{
     });
   }
 
-  private static reserveRoomCode(): string {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const roomCode = randomInt(100_000, 1_000_000).toString();
-      if (!CipherDeckRoom.activeRoomCodes.has(roomCode)) {
-        CipherDeckRoom.activeRoomCodes.add(roomCode);
-        return roomCode;
-      }
-    }
-    throw new ServerError(503, "Unable to allocate a room code. Please try again.");
-  }
 }

@@ -29,6 +29,7 @@ Compose publishes frontend `8080`, API `8000`, and realtime `2567`. PostgreSQL a
 | `REFRESH_TOKEN_TTL_DAYS` | refresh-session lifetime |
 | `GUEST_AUTH_ENABLED` | enables ephemeral one-match Guest sessions; default `true` |
 | `GUEST_SESSION_TTL_SECONDS` | Guest JWT lifetime; default `21600` (6 hours) |
+| `ADMIN_EMAILS` | comma-separated verified Google emails granted the protected deck-admin role |
 
 Password signup/signin no longer exists. Google users are persistent; Guest sessions create no database rows and have no refresh cookie. Migration `20260717_0002` deletes old password accounts and their sessions.
 
@@ -43,6 +44,7 @@ Password signup/signin no longer exists. Google users are persistent; Guest sess
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | PostgreSQL credentials |
 | `DATABASE_URL` | overridden by Compose for the API container |
 | `REDIS_URL` | Redis presence/driver, distributed rate buckets, recovery checkpoints, and match-result outbox |
+| `API_RATE_LIMIT_PER_MINUTE` | maximum non-health API requests per client IP; default `120` |
 | `RECONNECT_TIMEOUT_SECONDS` | reconnect grace period, default `30` |
 | `MAX_ROOM_MESSAGES_PER_SECOND` | per-connection and Redis-backed per-user realtime limit, default `20` |
 

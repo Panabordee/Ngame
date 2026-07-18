@@ -13,15 +13,18 @@ import { CipherDeckRoom, type RoomMetadata } from "./CipherDeckRoom.ts";
 import { loadServerConfig, type ServerConfig } from "./config.ts";
 import {
   InMemoryGuestSessionRegistry,
+  RedisGuestSessionRegistry,
   type GuestSessionRegistry,
 } from "./guestSessions.ts";
 import { InMemoryUserRoomRegistry, RedisUserRoomRegistry, type UserRoomRegistry } from "./userRoomRegistry.ts";
+import { InMemoryRoomCodeRegistry, RedisRoomCodeRegistry, type RoomCodeRegistry } from "./roomCodeRegistry.ts";
 
 export function createGameServer(
   config: ServerConfig = loadServerConfig(),
   authenticator: Authenticator = createJwtAuthenticator(config),
-  guestSessions: GuestSessionRegistry = new InMemoryGuestSessionRegistry(),
+  guestSessions: GuestSessionRegistry = config.redisUrl === undefined ? new InMemoryGuestSessionRegistry() : new RedisGuestSessionRegistry(config.redisUrl),
   userRooms: UserRoomRegistry = config.redisUrl === undefined ? new InMemoryUserRoomRegistry() : new RedisUserRoomRegistry(config.redisUrl),
+  roomCodes: RoomCodeRegistry = config.redisUrl === undefined ? new InMemoryRoomCodeRegistry() : new RedisRoomCodeRegistry(config.redisUrl),
 ) {
   const redisPresence = config.redisUrl === undefined ? undefined : new RedisPresence(config.redisUrl);
   const resultQueue = "ngame:match-result-outbox";
@@ -41,6 +44,7 @@ export function createGameServer(
   CipherDeckRoom.authenticator = authenticator;
   CipherDeckRoom.guestSessions = guestSessions;
   CipherDeckRoom.userRooms = userRooms;
+  CipherDeckRoom.roomCodes = roomCodes;
   CipherDeckRoom.runtimeConfig = {
     reconnectSeconds: config.reconnectSeconds,
     maxMessagesPerSecond: config.maxMessagesPerSecond,

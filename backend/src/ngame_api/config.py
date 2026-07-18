@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:5173"
 
     database_url: str = "sqlite+aiosqlite:///./ngame.db"
+    redis_url: str | None = None
+    api_rate_limit_per_minute: int = Field(default=120, ge=10, le=10_000)
 
     jwt_private_key_file: str = "secrets/jwt-private.pem"
     jwt_public_key_file: str = "secrets/jwt-public.pem"
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+    admin_emails: str = ""
 
     @cached_property
     def allowed_origins(self) -> list[str]:
@@ -47,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ngame_env.casefold() == "production"
+
+    @property
+    def administrator_emails(self) -> set[str]:
+        return {email.strip().casefold() for email in self.admin_emails.split(",") if email.strip()}
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":

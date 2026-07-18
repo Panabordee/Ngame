@@ -2,7 +2,7 @@
 
 This document records requested future work. It does not override `GAME_DESIGN.md`; a feature becomes authoritative only after its open rule decisions are resolved and the canonical design is updated.
 
-Status (2026-07-17): items 2–9 are implemented. Protected admin/deck-art management remains future work. The canonical rules have been moved to `GAME_DESIGN.md`.
+Status (2026-07-19): items 1–9 are implemented. Deck administration uses role-protected validated metadata endpoints and an audit log; runtime images remain in object storage. The canonical rules live in `GAME_DESIGN.md`.
 
 ## Recommended order
 

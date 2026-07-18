@@ -18,6 +18,17 @@ import { loadServerConfig } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
 import { InMemoryGuestSessionRegistry } from "./guestSessions.ts";
 import { InMemoryUserRoomRegistry } from "./userRoomRegistry.ts";
+import { InMemoryRoomCodeRegistry } from "./roomCodeRegistry.ts";
+
+test("room-code registry allocates unique codes and rejects foreign release", async () => {
+  const registry = new InMemoryRoomCodeRegistry();
+  const first = await registry.allocate("room-a");
+  const second = await registry.allocate("room-b");
+  assert.match(first, /^\d{6}$/);
+  assert.notEqual(first, second);
+  assert.equal(await registry.release(first, "room-b"), false);
+  assert.equal(await registry.release(first, "room-a"), true);
+});
 
 const TEST_CONFIG: ServerConfig = {
   port: 2568,
@@ -415,17 +426,17 @@ test("deduction memory keeps public misses after the short guess feed rolls over
   await client.leave(true);
 });
 
-test("guest-session registry reserves one room and remains consumed after commit", () => {
+test("guest-session registry reserves one room and remains consumed after commit", async () => {
   const registry = new InMemoryGuestSessionRegistry();
   const expiresAtMs = Date.now() + 60_000;
-  assert.equal(registry.reserve("guest-session", "room-a", expiresAtMs), "created");
-  assert.equal(registry.reserve("guest-session", "room-a", expiresAtMs), "same-room");
-  assert.equal(registry.reserve("guest-session", "room-b", expiresAtMs), "conflict");
-  assert.equal(registry.releaseReservation("guest-session", "room-a"), true);
-  assert.equal(registry.reserve("guest-session", "room-b", expiresAtMs), "created");
-  assert.equal(registry.commit("guest-session", "room-b"), true);
-  assert.equal(registry.releaseReservation("guest-session", "room-b"), false);
-  assert.equal(registry.reserve("guest-session", "room-c", expiresAtMs), "conflict");
+  assert.equal(await registry.reserve("guest-session", "room-a", expiresAtMs), "created");
+  assert.equal(await registry.reserve("guest-session", "room-a", expiresAtMs), "same-room");
+  assert.equal(await registry.reserve("guest-session", "room-b", expiresAtMs), "conflict");
+  assert.equal(await registry.releaseReservation("guest-session", "room-a"), true);
+  assert.equal(await registry.reserve("guest-session", "room-b", expiresAtMs), "created");
+  assert.equal(await registry.commit("guest-session", "room-b"), true);
+  assert.equal(await registry.releaseReservation("guest-session", "room-b"), false);
+  assert.equal(await registry.reserve("guest-session", "room-c", expiresAtMs), "conflict");
 });
 
 test("user-room registry atomically allows only one active player room", async () => {

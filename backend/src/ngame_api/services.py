@@ -172,6 +172,7 @@ async def authenticate_google_user(
         user = User(
             display_name=display_name[:32] or "Player",
             avatar_url=avatar_url[:2048] if avatar_url else None,
+            role="admin" if normalized in settings.administrator_emails else "player",
         )
         session.add(user)
         await session.flush()
@@ -190,6 +191,7 @@ async def authenticate_google_user(
             raise AuthenticationError
         if avatar_url:
             user.avatar_url = avatar_url[:2048]
+        user.role = "admin" if normalize_email(email) in settings.administrator_emails else "player"
     return await _new_session(
         session, user, identity, settings, user_agent, ip_address
     )

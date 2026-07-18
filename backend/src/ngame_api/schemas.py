@@ -119,3 +119,32 @@ class FriendItem(BaseModel):
 
 class FriendsResponse(BaseModel):
     items: list[FriendItem]
+
+
+class CardAssetInput(BaseModel):
+    card_key: str = Field(min_length=1, max_length=32, pattern=r"^[A-Z0-9_-]+$")
+    asset_url: str = Field(min_length=8, max_length=2048, pattern=r"^https?://")
+    checksum_sha256: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+
+
+class CardAssetResponse(CardAssetInput):
+    id: UUID
+
+
+class CardDeckCreate(BaseModel):
+    slug: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9-]+$")
+    name: str = Field(min_length=1, max_length=64)
+    active: bool = False
+
+
+class CardDeckUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    active: bool | None = None
+
+
+class CardDeckResponse(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+    active: bool
+    assets: list[CardAssetResponse]

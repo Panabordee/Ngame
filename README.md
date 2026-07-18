@@ -2,6 +2,8 @@
 
 NGAME is a browser-based, server-authoritative card deduction game. It supports solo play with bots, 3–6 seat Quick Match and six-digit private rooms, host moderation and ready checks, four selectable visual themes, English/Thai UI, a deduction notebook, guess feed, Daily Cipher, achievements, seasonal leaderboard, replay/share results, friends/party invites, safe preset emotes, and privacy-safe spectators. Redis coordinates multi-instance room discovery and queues match results while the API is unavailable.
 
+Operators can configure `ADMIN_EMAILS` to manage validated deck-theme metadata and assets through the protected `/admin/decks` API. Every mutation is recorded in `admin_audit_logs`.
+
 The game table is landscape-first on mobile, with safe-area support, compact opponent racks, a fixed action dock, and a viewport-safe guess picker. Portrait phones receive a rotate prompt.
 
 ## Quick links

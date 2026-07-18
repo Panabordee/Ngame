@@ -1,13 +1,14 @@
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 from authlib.integrations.base_client.errors import OAuthError
 from fastapi.testclient import TestClient
 import jwt
 import pytest
 
-from ngame_api.models import AuthIdentity, RefreshSession, User
+from ngame_api.models import AdminAuditLog, AuthIdentity, CardAsset, CardDeck, RefreshSession, User
 from ngame_api.services import IdentityConflictError, authenticate_google_user
 
 
@@ -50,6 +51,18 @@ def test_health_disabled_google_and_removed_password_routes(client: TestClient) 
     assert client.get("/auth/google/start").status_code == 404
     assert client.post("/auth/register", json={}).status_code == 404
     assert client.post("/auth/login", json={}).status_code == 404
+
+
+def test_api_rate_limit_rejects_excess_requests_but_keeps_health_available(
+    client: TestClient,
+) -> None:
+    client.app.state.settings.api_rate_limit_per_minute = 10
+    for _ in range(10):
+        assert client.get("/auth/google/start").status_code == 404
+    limited = client.get("/auth/google/start")
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"]
+    assert client.get("/healthz").status_code == 200
 
 
 def test_guest_session_is_signed_temporary_and_not_persisted(
@@ -241,6 +254,57 @@ def test_profile_rejects_invalid_username(client: TestClient) -> None:
         json={"display_name": "Player", "username": "not allowed!"},
     )
     assert rejected.status_code == 422
+
+
+def test_deck_admin_is_role_protected_validated_and_audited(client: TestClient) -> None:
+    login = complete_google_login(client).json()
+    token = login["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/admin/decks", headers=headers).status_code == 403
+
+    async def promote() -> None:
+        async with client.app.state.database.sessions() as session:
+            user = await session.get(User, UUID(login["user"]["id"]))
+            assert user is not None
+            user.role = "admin"
+            await session.commit()
+
+    asyncio.run(promote())
+    created = client.post(
+        "/admin/decks",
+        headers=headers,
+        json={"slug": "midnight-test", "name": "Midnight Test", "active": False},
+    )
+    assert created.status_code == 201
+    deck_id = created.json()["id"]
+    checksum = "a" * 64
+    asset = client.post(
+        f"/admin/decks/{deck_id}/assets",
+        headers=headers,
+        json={"card_key": "BACK", "asset_url": "https://assets.example/back.webp", "checksum_sha256": checksum},
+    )
+    assert asset.status_code == 201
+    activated = client.patch(f"/admin/decks/{deck_id}", headers=headers, json={"active": True})
+    assert activated.status_code == 200
+    assert client.post(
+        f"/admin/decks/{deck_id}/assets",
+        headers=headers,
+        json={"card_key": "BACK", "asset_url": "javascript:alert(1)", "checksum_sha256": checksum},
+    ).status_code == 422
+    public = client.get("/decks")
+    assert public.status_code == 200
+    assert public.json()[0]["assets"][0]["card_key"] == "BACK"
+    assert client.delete(f"/admin/assets/{asset.json()['id']}", headers=headers).status_code == 409
+
+    async def counts() -> tuple[int, int, int]:
+        async with client.app.state.database.sessions() as session:
+            return (
+                len((await session.execute(CardDeck.__table__.select())).all()),
+                len((await session.execute(CardAsset.__table__.select())).all()),
+                len((await session.execute(AdminAuditLog.__table__.select())).all()),
+            )
+
+    assert asyncio.run(counts()) == (1, 1, 3)
 
 
 def test_refresh_token_rotates_and_old_token_is_rejected(client: TestClient) -> None:

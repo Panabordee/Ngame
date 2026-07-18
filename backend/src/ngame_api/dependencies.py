@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .config import Settings
 from .security import decode_access_token
 from .services import user_profile
+from .models import AuthIdentity, User
 
 
 bearer = HTTPBearer(auto_error=False)
@@ -41,4 +42,12 @@ async def get_current_profile(
     profile = await user_profile(session, user_id)
     if profile is None:
         raise unauthorized
+    return profile
+
+
+async def require_admin(
+    profile: Annotated[tuple[User, AuthIdentity], Depends(get_current_profile)],
+) -> tuple[User, AuthIdentity]:
+    if profile[0].role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required.")
     return profile

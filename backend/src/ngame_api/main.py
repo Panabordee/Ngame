@@ -1,9 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import time
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -13,6 +15,8 @@ from .routers.auth import router as auth_router
 from .routers.matches import router as matches_router
 from .routers.puzzles import router as puzzles_router
 from .routers.social import router as social_router
+from .routers.admin import router as admin_router
+from .rate_limit import InMemoryRateLimiter, RedisRateLimiter, safely_increment
 
 
 def create_app(settings: Settings | None = None, database: Database | None = None) -> FastAPI:
@@ -27,6 +31,32 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     app = FastAPI(title="NGAME API", version="0.1.0", lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.database = resolved_database
+    app.state.rate_limiter = (
+        RedisRateLimiter(resolved_settings.redis_url)
+        if resolved_settings.redis_url
+        else InMemoryRateLimiter()
+    )
+
+    @app.middleware("http")
+    async def rate_limit(request: Request, call_next):
+        if (
+            request.method == "OPTIONS"
+            or request.url.path == "/healthz"
+            or request.url.path.startswith("/matches/internal/")
+        ):
+            return await call_next(request)
+        client_ip = request.client.host if request.client else "unknown"
+        window_seconds = 60
+        bucket = int(time.time()) // window_seconds
+        key = f"ngame:api-rate:{client_ip}:{bucket}"
+        count = await safely_increment(app.state.rate_limiter, key, window_seconds + 1)
+        if count > resolved_settings.api_rate_limit_per_minute:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again shortly."},
+                headers={"Retry-After": str(window_seconds - int(time.time()) % window_seconds)},
+            )
+        return await call_next(request)
 
     app.add_middleware(
         CORSMiddleware,
@@ -57,6 +87,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     app.include_router(matches_router)
     app.include_router(puzzles_router)
     app.include_router(social_router)
+    app.include_router(admin_router)
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:
