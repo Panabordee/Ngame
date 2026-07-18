@@ -10,6 +10,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import Settings
 from .database import Database
 from .routers.auth import router as auth_router
+from .routers.matches import router as matches_router
+from .routers.puzzles import router as puzzles_router
+from .routers.social import router as social_router
 
 
 def create_app(settings: Settings | None = None, database: Database | None = None) -> FastAPI:
@@ -29,7 +32,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
     app.add_middleware(
@@ -51,6 +54,9 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     app.state.oauth = oauth
 
     app.include_router(auth_router)
+    app.include_router(matches_router)
+    app.include_router(puzzles_router)
+    app.include_router(social_router)
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:

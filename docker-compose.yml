@@ -68,12 +68,17 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       RECONNECT_TIMEOUT_SECONDS: ${RECONNECT_TIMEOUT_SECONDS:-30}
       MAX_ROOM_MESSAGES_PER_SECOND: ${MAX_ROOM_MESSAGES_PER_SECOND:-20}
+      API_INTERNAL_URL: http://api:8000
+      MATCH_RESULT_SECRET: ${MATCH_RESULT_SECRET}
+      REDIS_URL: redis://redis:6379
     secrets:
       - jwt_public_key
     ports:
       - "${PUBLISH_ADDRESS:-127.0.0.1}:${REALTIME_PORT:-2567}:2567"
     depends_on:
       api:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - edge

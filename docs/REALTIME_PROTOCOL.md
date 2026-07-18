@@ -15,13 +15,15 @@ const room = await client.joinOrCreate("cipher_deck", {
 });
 ```
 
-`desiredPlayers` must be an integer from 3 through 6. Rooms with different desired counts do not match together. The room locks when the host starts and rejects duplicate identities or mid-match joins. Quick Match stays Classic; code-room hosts may apply Custom rules before readying.
+`desiredPlayers` must be an integer from 3 through 6. Rooms with different desired counts do not match together. After Start, ordinary joins are rejected by the room while `{ spectator: true }` may join a started code room with a public-only projection. Quick Match stays Classic; code-room hosts may apply Custom rules before readying.
 
 Create a numbered room with `client.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" })`. The server returns a unique six-digit `roomCode` in the state. To join it, request `GET /rooms/by-code/{roomCode}`, read the returned `roomId`, and call `client.joinById(roomId)`. Code rooms never match Quick Match requests.
 
 Register message handlers immediately, then send `sync`. The explicit sync prevents a client from missing a state message emitted during the join handshake.
 
 A Guest session may reserve only one room. It may switch rooms only after leaving a waiting lobby before Start. Once the host starts, the binding is committed and that Guest JWT cannot join another match. The browser stores `room.reconnectionToken` in per-tab `sessionStorage` and calls `client.reconnect(token)` after a reload; it does not create a new identity to bypass a forfeit.
+
+Every authenticated account also has one active player-room reservation. Redis performs atomic `SET NX` reservation and compare-and-delete release across realtime replicas. A temporary disconnect retains the reservation through the reconnect window; leaving or reconnect timeout releases it. Spectator joins do not consume a player reservation.
 
 ## Client-to-server messages
 
@@ -32,6 +34,9 @@ A Guest session may reserve only one room. It may switch rooms only after leavin
 | `update-guest-name` | `{ "displayName": "Cipher Guest" }` | waiting lobby, Guest only |
 | `update-settings` | `{ preset, turnSeconds, totalCards, drawRounds, jokerCount }` | waiting lobby, host only |
 | `start-game` | none | waiting lobby, host only, everyone ready |
+| `rematch` | none | finished, host only; returns everyone to a ready-check lobby |
+| `kick-player` / `transfer-host` | `{ "playerId": "user UUID" }` | waiting lobby, host only |
+| `emote` | `{ "emote": "thinking | nice | oops | good-game" }` | any joined phase |
 | `select-starting-card` | `{ "cardId": "opaque option ID" }` | starting selection |
 | `place-starting-joker` | `{ "rackIndex": 0 }` | `starter-place`, owner only |
 | `draw` | none | `draw` |
@@ -84,7 +89,9 @@ The server derives the actor from the authenticated connection. No payload can c
   "droppedPlayerIds": [],
   "serverTimeMs": 0,
   "turnDeadlineMs": "epoch milliseconds or null",
-  "game": "viewer-safe game object or null"
+  "deductionMisses": "public wrong guesses retained for the deduction notebook",
+  "game": "viewer-safe game object or null",
+  "isSpectator": false
 }
 ```
 
@@ -92,6 +99,6 @@ During starting selection, option values remain hidden until every eligible play
 
 `guest-name-updated` confirms the normalized room display name. Guest names are 1–32 characters, must be unique inside that room when changed, and lock when Start is accepted. Every room player includes `accountType`; clients must display a visible Guest badge so a Guest name cannot be mistaken for a persistent profile.
 
-`error` contains `{ "code": "...", "message": "..." }`. Expected codes include `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION`, and `INVALID_TARGET`.
+`error` contains `{ "code": "...", "message": "..." }`. Expected codes include `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `RATE_LIMITED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION`, and `INVALID_TARGET`.
 
-Room messages are rate-limited by `MAX_ROOM_MESSAGES_PER_SECOND`. Any game result sent by a client is ignored; only the authoritative room evaluates reveals, elimination, and the winner.
+Room messages use both a per-connection limit and a Redis per-user/second bucket controlled by `MAX_ROOM_MESSAGES_PER_SECOND`. Any game result sent by a client is ignored; only the authoritative room evaluates reveals, elimination, and the winner.

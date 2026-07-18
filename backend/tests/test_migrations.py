@@ -98,4 +98,4 @@ def test_google_only_migration_purges_password_users_but_keeps_linked_google_use
     assert identities == [(linked_user_id, "google")]
     assert sessions == [(linked_user_id,)]
     assert "password_credentials" not in tables
-    assert version == ("20260717_0004",)
+    assert version == ("20260719_0006",)

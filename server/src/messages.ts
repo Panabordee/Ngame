@@ -86,6 +86,7 @@ export function parseRoomSettings(value: unknown): UpdateRoomSettingsMessage | n
     !Number.isSafeInteger(value.drawRounds) ||
     !Number.isSafeInteger(value.jokerCount) ||
     ![0, 2, 3, 4].includes(value.jokerCount as number)
+    || !["easy", "normal", "hard"].includes(value.botDifficulty as string)
   ) {
     return null;
   }
@@ -95,6 +96,7 @@ export function parseRoomSettings(value: unknown): UpdateRoomSettingsMessage | n
     totalCards: value.totalCards as number,
     drawRounds: value.drawRounds as number,
     jokerCount: value.jokerCount as UpdateRoomSettingsMessage["jokerCount"],
+    botDifficulty: value.botDifficulty as UpdateRoomSettingsMessage["botDifficulty"],
   };
 }
 

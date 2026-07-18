@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -55,3 +55,30 @@ class RefreshSession(Base):
     )
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class MatchPlayerRecord(Base):
+    __tablename__ = "match_player_records"
+    __table_args__ = (UniqueConstraint("match_id", "user_id", name="uq_match_player"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    match_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    won: Mapped[bool] = mapped_column(Boolean)
+    guesses: Mapped[int] = mapped_column(Integer)
+    correct_guesses: Mapped[int] = mapped_column(Integer)
+    cards_revealed: Mapped[int] = mapped_column(Integer)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class SocialConnection(Base):
+    __tablename__ = "social_connections"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    pair_key: Mapped[str] = mapped_column(String(73), unique=True, index=True)
+    user_a_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_b_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    requested_by_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

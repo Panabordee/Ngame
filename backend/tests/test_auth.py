@@ -178,6 +178,61 @@ def test_player_can_set_profile_and_username_must_be_unique(client: TestClient) 
     assert conflict.status_code == 409
 
 
+def test_authoritative_match_result_updates_player_history(client: TestClient) -> None:
+    login = complete_google_login(client)
+    token = login.json()["access_token"]
+    user_id = login.json()["user"]["id"]
+    blocked = client.post("/matches/internal/results", json={"match_id": "m1", "players": []})
+    assert blocked.status_code == 403
+    stored = client.post(
+        "/matches/internal/results",
+        headers={"X-Ngame-Internal-Secret": client.app.state.settings.match_result_secret},
+        json={"match_id": "m1", "players": [{"user_id": user_id, "won": True, "guesses": 5, "correct_guesses": 3, "cards_revealed": 3}]},
+    )
+    assert stored.status_code == 200
+    history = client.get("/matches/me", headers={"Authorization": f"Bearer {token}"})
+    assert history.status_code == 200
+    assert history.json()["games"] == 1
+    assert history.json()["wins"] == 1
+    assert history.json()["current_streak"] == 1
+    assert history.json()["recent_matches"][0]["correct_guesses"] == 3
+
+
+def test_lifetime_streak_is_not_truncated_to_recent_history_page(client: TestClient) -> None:
+    login = complete_google_login(client).json()
+    token = login["access_token"]
+    user_id = login["user"]["id"]
+    headers = {"X-Ngame-Internal-Secret": client.app.state.settings.match_result_secret}
+    for index in range(25):
+        response = client.post("/matches/internal/results", headers=headers, json={"match_id": f"streak-{index}", "players": [{"user_id": user_id, "won": True, "guesses": 1, "correct_guesses": 1, "cards_revealed": 1}]})
+        assert response.status_code == 200
+    stats = client.get("/matches/me", headers={"Authorization": f"Bearer {token}"}).json()
+    assert stats["games"] == 25
+    assert stats["current_streak"] == 25
+    assert len(stats["recent_matches"]) == 20
+
+
+def test_block_can_only_be_seen_and_removed_by_the_blocking_player(client: TestClient) -> None:
+    first = complete_google_login(client).json()
+    first_token = first["access_token"]
+    assert client.patch("/auth/me", headers={"Authorization": f"Bearer {first_token}"}, json={"display_name": "First", "username": "first_player"}).status_code == 200
+
+    client.cookies.clear()
+    configure_google(client, SuccessfulGoogleClient({"sub": "social-second", "email": "social-second@example.com", "email_verified": True, "name": "Second"}))
+    assert client.get("/auth/google/callback", follow_redirects=False).status_code == 303
+    second_token = client.post("/auth/refresh").json()["access_token"]
+    assert client.patch("/auth/me", headers={"Authorization": f"Bearer {second_token}"}, json={"display_name": "Second", "username": "second_player"}).status_code == 200
+
+    blocked = client.post("/social/block", headers={"Authorization": f"Bearer {first_token}"}, json={"username": "second_player"})
+    assert blocked.status_code == 200
+    first_items = client.get("/social/friends", headers={"Authorization": f"Bearer {first_token}"}).json()["items"]
+    assert first_items[0]["status"] == "blocked"
+    connection_id = first_items[0]["connection_id"]
+    assert client.get("/social/friends", headers={"Authorization": f"Bearer {second_token}"}).json()["items"] == []
+    assert client.delete(f"/social/friends/{connection_id}", headers={"Authorization": f"Bearer {second_token}"}).status_code == 404
+    assert client.delete(f"/social/friends/{connection_id}", headers={"Authorization": f"Bearer {first_token}"}).status_code == 200
+
+
 def test_profile_rejects_invalid_username(client: TestClient) -> None:
     response = complete_google_login(client)
     rejected = client.patch(

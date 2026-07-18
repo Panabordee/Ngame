@@ -23,16 +23,22 @@
 - A player loses when every card in their own rack has been revealed. The last active player wins.
 
 ## 2. Lobby and Reconnection
-- A room is created with a maximum `desiredPlayers` value from 3–6. The creator is host. The match never auto-starts: every connected player must mark ready, and the host may start with at least three players up to the room maximum. Changing room settings clears ready state.
+- A room is created with a `desiredPlayers` value from 3–6. The creator is host and is implicitly ready because they control the Start action. The match never auto-starts: every connected non-host human must mark ready, and the host may start alone or with other humans. Empty seats up to `desiredPlayers` are filled by server-controlled bots. Changing room settings clears non-host ready state.
 - If the host leaves before starting, host ownership transfers by join order.
-- Public rooms are available through Quick Match. Private/code rooms receive a unique server-generated six-digit room code, are excluded from Quick Match, and can be joined by entering that code.
+- The player-facing lobby uses a single Create Room flow and asks for the desired total player count. Private rooms display a six-digit room code and invite link; public Quick Play does not require a code.
+- Bots act only through the authoritative server transitions: they select a starting card, place opening Jokers, draw, guess, place, take penalties, and obey the same rack, turn, reveal, and win/loss validation as humans.
+- Hosts choose Easy, Normal, or Hard bots. Easy guesses randomly, Normal avoids guesses it has publicly seen fail for the same card, and Hard additionally narrows guesses using revealed neighbors and legal rack order. No bot reads hidden opponent values.
+- Private rooms expose a six-digit code and copyable invite URL. Public Quick Play and the current Create Room flow remain available.
+- The server publishes a bounded public activity log and authoritative per-match guess statistics. Completed matches show a result screen; the host may request a rematch, which returns connected humans to the ready lobby and builds a fresh match.
+- Registered-player results are reported server-to-server to FastAPI and stored for recent history, win rate, accuracy, and streak display. Guests remain ephemeral.
+- Clients provide a guided rules tutorial, reconnect countdown overlay, sound controls, reduced motion, high contrast, color-blind symbols, adjustable card size, language selection, and selectable visual themes.
 - Lock the room when the host starts the starting-card selection; do not allow mid-match joins.
 - Pause all game actions when a connected player drops and allow 30 seconds for reconnection.
 - If the player does not reconnect in time, permanently reveal every card in their rack and eliminate them by forfeit. If they had drawn a card but had not inserted it yet, insert and reveal it before resolving the forfeit so no card disappears from authoritative state.
 - If the forfeiting player owned the current turn, advance to the next active player. Apply the normal last-player-standing win condition after every forfeit.
 
 ## 3. Future Differentiators
-Potential extensions after the core loop is stable:
+Deferred until after the current solo/3–6 player loop is complete and stable; these are not part of the implemented rules:
 - Add a "Wild/Cipher" card that can't be guessed directly and needs a special ability to resolve.
 - Add a 2v2 team mode with a limited number of shared hint tokens.
 - Add ranked/MMR matchmaking for the online mode.

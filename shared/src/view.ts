@@ -92,3 +92,26 @@ export function projectStateForPlayer(state: GameState, viewerId: string): Clien
     turn: state.turn,
   };
 }
+
+export function projectStateForSpectator(state: GameState): ClientGameView {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+  if (currentPlayer === undefined) throw new RuleViolation("INVALID_TURN", "The current player index is invalid.");
+  return {
+    version: 1,
+    players: state.players.map((player) => ({
+      id: player.id,
+      rack: player.rack.map((card, cardIndex) => state.phase === "starter-place" ? hiddenCard(card, `setup-hidden-${player.id}-${cardIndex}`) : card.revealed ? visibleCard(card) : hiddenCard(card)),
+      eliminated: player.eliminated,
+    })),
+    drawPileCount: state.drawPile.length,
+    currentPlayerId: currentPlayer.id,
+    phase: state.phase,
+    pendingDraw: state.pendingDraw === null ? null : state.pendingDraw.revealed ? visibleCard(state.pendingDraw) : hiddenCard(state.pendingDraw),
+    drawnCardId: state.drawnCardId,
+    correctGuessesThisTurn: state.correctGuessesThisTurn,
+    startingCardIds: { ...state.startingCardIds },
+    pendingStartingJokerCardIds: [],
+    winnerId: state.winnerId,
+    turn: state.turn,
+  };
+}

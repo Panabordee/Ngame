@@ -15,13 +15,15 @@ const room = await client.joinOrCreate("cipher_deck", {
 });
 ```
 
-`desiredPlayers` ต้องเป็นจำนวนเต็ม 3–6 ห้องที่ตั้งจำนวนต่างกันจะไม่ match กัน ห้องจะ lock เมื่อ host กดเริ่มและปฏิเสธ identity ซ้ำหรือการเข้ากลางเกม Quick Match ใช้ Classic ส่วน host ห้องรหัสตั้ง Custom ได้ก่อน ready
+`desiredPlayers` ต้องเป็นจำนวนเต็ม 3–6 ห้องที่ตั้งจำนวนต่างกันจะไม่ match กัน หลังเริ่มเกม room ปฏิเสธ join แบบผู้เล่น แต่ `{ spectator: true }` เข้าชมห้องรหัสที่เริ่มแล้วได้ด้วย public-only projection Quick Match ใช้ Classic ส่วน host ห้องรหัสตั้ง Custom ได้ก่อน ready
 
 สร้างห้องเลขด้วย `client.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" })` เซิร์ฟเวอร์จะส่ง `roomCode` 6 หลักที่ไม่ซ้ำมาใน state ผู้เข้าร่วมเรียก `GET /rooms/by-code/{roomCode}` เพื่อรับ `roomId` แล้วเรียก `client.joinById(roomId)` ห้องแบบรหัสจะไม่ถูกเลือกโดย Quick Match
 
 หลัง join ให้ผูก message handler ทันทีแล้วส่ง `sync` เพื่อป้องกันการพลาด state ที่ถูกส่งระหว่าง join handshake
 
 Guest session จองได้ครั้งละหนึ่งห้องและเปลี่ยนห้องได้เฉพาะเมื่อออกจาก lobby ก่อนกด Start เมื่อ host เริ่มแล้ว binding จะถูก commit และ Guest JWT นั้นเข้าห้องเกมอื่นไม่ได้ Browser เก็บ `room.reconnectionToken` ใน `sessionStorage` ของแท็บและเรียก `client.reconnect(token)` หลัง refresh หน้า โดยไม่สร้าง identity ใหม่เพื่อหนีการ forfeit
+
+ทุกบัญชีมี active player-room reservation ได้หนึ่งห้อง Redis ใช้ `SET NX` และ compare-and-delete เพื่อให้ atomic ข้าม realtime replica การหลุดชั่วคราวจะยังคง reservation ระหว่างช่วง reconnect และปล่อยเมื่อออกหรือหมดเวลา ส่วน spectator ไม่จอง player slot
 
 ## ข้อความจาก Client ไป Server
 
@@ -32,6 +34,9 @@ Guest session จองได้ครั้งละหนึ่งห้อง
 | `update-guest-name` | `{ "displayName": "Cipher Guest" }` | lobby ที่ยังรอ, Guest เท่านั้น |
 | `update-settings` | `{ preset, turnSeconds, totalCards, drawRounds, jokerCount }` | lobby, host เท่านั้น |
 | `start-game` | ไม่มี | lobby, host เท่านั้นและทุกคน ready |
+| `rematch` | ไม่มี | จบเกม, host เท่านั้น แล้วกลับ lobby เพื่อตรวจ ready ใหม่ |
+| `kick-player` / `transfer-host` | `{ "playerId": "user UUID" }` | lobby, host เท่านั้น |
+| `emote` | `{ "emote": "thinking | nice | oops | good-game" }` | ทุก phase ที่อยู่ในห้อง |
 | `select-starting-card` | `{ "cardId": "opaque option ID" }` | phase เลือกคนเริ่ม |
 | `place-starting-joker` | `{ "rackIndex": 0 }` | `starter-place`, เจ้าของเท่านั้น |
 | `draw` | ไม่มี | `draw` |
@@ -84,7 +89,8 @@ Server หา actor จาก connection ที่ยืนยันตัวต
   "droppedPlayerIds": [],
   "serverTimeMs": 0,
   "turnDeadlineMs": "epoch milliseconds หรือ null",
-  "game": "viewer-safe game object or null"
+  "game": "viewer-safe game object or null",
+  "isSpectator": false
 }
 ```
 
@@ -92,6 +98,6 @@ Server หา actor จาก connection ที่ยืนยันตัวต
 
 `guest-name-updated` ยืนยันชื่อในห้องหลัง normalize ชื่อ Guest ยาว 1–32 ตัว ต้องไม่ซ้ำกับคนอื่นในห้องตอนแก้ และจะล็อกเมื่อ server รับ Start ผู้เล่นทุกคนมี `accountType` และ client ต้องแสดงป้าย Guest ให้เห็นชัดเพื่อไม่ให้สับสนกับ profile ถาวร
 
-`error` มี `{ "code": "...", "message": "..." }` code ที่คาดได้เช่น `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION` และ `INVALID_TARGET`
+`error` มี `{ "code": "...", "message": "..." }` code ที่คาดได้เช่น `INVALID_MESSAGE`, `INVALID_GUEST_NAME`, `GUEST_ONLY`, `NAME_TAKEN`, `MATCH_ALREADY_STARTED`, `MATCH_NOT_STARTED`, `MATCH_PAUSED`, `RATE_LIMITED`, `INVALID_TURN`, `WRONG_PHASE`, `INVALID_INSERTION` และ `INVALID_TARGET`
 
-ข้อความในห้องถูกจำกัดด้วย `MAX_ROOM_MESSAGES_PER_SECOND` ผลเกมจาก client จะถูกเพิกเฉย มีเพียง authoritative room ที่ตัดสินการเปิดไพ่ การแพ้ และผู้ชนะ
+ข้อความในห้องถูกจำกัดทั้งต่อ connection และ Redis bucket ต่อ user/วินาทีด้วย `MAX_ROOM_MESSAGES_PER_SECOND` ผลเกมจาก client จะถูกเพิกเฉย มีเพียง authoritative room ที่ตัดสินการเปิดไพ่ การแพ้ และผู้ชนะ

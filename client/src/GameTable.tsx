@@ -12,6 +12,7 @@ import {
 import { CardView } from "./CardView.tsx";
 
 interface GameTableProps {
+  readonly language: "en" | "th";
   readonly game: ClientGameView;
   readonly viewerId: string;
   readonly viewerName: string;
@@ -34,6 +35,7 @@ interface GameTableProps {
 }
 
 export function GameTable({
+  language,
   game,
   viewerId,
   viewerName,
@@ -54,6 +56,7 @@ export function GameTable({
   onSelectPenalty,
   onInsert,
 }: GameTableProps) {
+  const tr = (english: string, thai: string): string => language === "th" ? thai : english;
   const viewer = game.players.find((player) => player.id === viewerId);
   const opponents = game.players.filter((player) => player.id !== viewerId);
   const isViewerTurn = game.currentPlayerId === viewerId;
@@ -93,6 +96,7 @@ export function GameTable({
   );
   const isTimeoutWarning =
     turnRemainingSeconds !== null && turnRemainingSeconds >= 0 && turnRemainingSeconds <= 10;
+  const phaseLabel = game.phase === "draw" ? tr("Draw", "รอจั่ว") : game.phase === "guess" ? tr("Guess", "กำลังเดา") : game.phase === "place" ? tr("Place", "รอวางไพ่") : game.phase === "penalty-place" ? tr("Place revealed card", "วางไพ่ที่เปิด") : game.phase === "self-penalty" ? tr("Choose penalty", "เลือกรับโทษ") : game.phase === "starter-place" ? tr("Place Joker", "วาง Joker") : tr("Game over", "จบเกม");
 
   return (
     <section className="game-table" aria-label="CipherDeck table">
@@ -108,13 +112,13 @@ export function GameTable({
           >
             <header className="seat-header">
               <div>
-                <span className="seat-kicker">Opponent {playerIndex + 1}</span>
+                <span className="seat-kicker">{tr("Opponent", "คู่แข่ง")} {playerIndex + 1}</span>
                 <span className="seat-player-name">
                   <strong>{playerNames[player.id] ?? `Player · ${player.id.slice(0, 4).toUpperCase()}`}</strong>
                   {playerAccountTypes[player.id] === "guest" && <em className="guest-badge">GUEST</em>}
                 </span>
               </div>
-              <span className="card-count">{player.rack.length} cards</span>
+              <span className="card-count">{player.rack.length} {tr("cards", "ใบ")}</span>
             </header>
             <div className="rack opponent-rack">
               {player.rack.map((card, cardIndex) => {
@@ -131,7 +135,7 @@ export function GameTable({
                     {selected && canTarget && (
                       <div className="guess-popover" role="dialog" aria-label="Choose your guess">
                         <div className="guess-popover-header">
-                          <strong>Choose rank</strong>
+                          <strong>{tr("What card is this?", "เดาว่าเป็นไพ่อะไร?")}</strong>
                           <button type="button" onClick={onCancelGuess} aria-label="Cancel guess">×</button>
                         </div>
                         <div className="rank-grid">
@@ -155,9 +159,9 @@ export function GameTable({
                         </div>
                         {guessRank !== null && guessRank !== "JOKER" && (
                           <div className="color-picker">
-                            <span>Then choose color</span>
-                            <button type="button" className={`color-red ${guessColor === "red" ? "is-active" : ""}`} onClick={() => onSelectGuessColor("red")}>Red</button>
-                            <button type="button" className={`color-black ${guessColor === "black" ? "is-active" : ""}`} onClick={() => onSelectGuessColor("black")}>Black</button>
+                            <span>{tr("Then choose a color", "จากนั้นเลือกสี")}</span>
+                            <button type="button" className={`color-red ${guessColor === "red" ? "is-active" : ""}`} onClick={() => onSelectGuessColor("red")}>{tr("Red", "แดง")}</button>
+                            <button type="button" className={`color-black ${guessColor === "black" ? "is-active" : ""}`} onClick={() => onSelectGuessColor("black")}>{tr("Black", "ดำ")}</button>
                           </div>
                         )}
                         <button
@@ -167,12 +171,12 @@ export function GameTable({
                           onClick={onConfirmGuess}
                         >
                           {guessRank === null
-                            ? "Choose a rank"
+                            ? tr("Choose a rank", "เลือกหน้าไพ่ก่อน")
                             : guessRank === "JOKER"
-                              ? "Guess JOKER"
+                              ? tr("Confirm JOKER", "ยืนยันว่าเป็น JOKER")
                               : guessColor === null
-                                ? "Choose a color"
-                                : `Guess ${guessRank} ${guessColor}`}
+                                ? tr("Choose a color", "เลือกสีก่อน")
+                                : tr(`Confirm ${guessRank} ${guessColor}`, `ยืนยัน ${guessRank} สี${guessColor === "red" ? "แดง" : "ดำ"}`)}
                         </button>
                       </div>
                     )}
@@ -180,7 +184,7 @@ export function GameTable({
                 );
               })}
             </div>
-            {player.eliminated && <span className="eliminated-banner">ELIMINATED</span>}
+            {player.eliminated && <span className="eliminated-banner">{tr("ELIMINATED", "แพ้แล้ว")}</span>}
           </article>
         ))}
       </div>
@@ -191,24 +195,24 @@ export function GameTable({
             {game.drawPileCount > 0 ? (
               <span className="deck-card card-back-art" />
             ) : (
-              <span className="empty-deck">EMPTY</span>
+              <span className="empty-deck">{tr("EMPTY", "หมด")}</span>
             )}
           </div>
           <div>
-            <span className="zone-label">DRAW PILE</span>
+            <span className="zone-label">{tr("DRAW PILE", "กองจั่ว")}</span>
             <strong>{game.drawPileCount}</strong>
           </div>
         </div>
 
         <div className={`turn-orbit ${isTimeoutWarning ? "is-timeout-warning" : ""}`}>
-          <span>TURN</span>
+          <span>{tr("TURN", "เทิร์น")}</span>
           <strong>{game.turn}</strong>
-          <small>{game.phase.replace("-", " ")}</small>
-          <em>{turnRemainingSeconds === null ? "UNTIMED" : `${Math.floor(turnRemainingSeconds / 60).toString().padStart(2, "0")}:${(turnRemainingSeconds % 60).toString().padStart(2, "0")}`}</em>
+          <small>{phaseLabel}</small>
+          <em>{turnRemainingSeconds === null ? tr("UNTIMED", "ไม่จับเวลา") : `${Math.floor(turnRemainingSeconds / 60).toString().padStart(2, "0")}:${(turnRemainingSeconds % 60).toString().padStart(2, "0")}`}</em>
         </div>
 
         <div className="pending-zone">
-          <span className="zone-label">DRAWN CARD</span>
+          <span className="zone-label">{tr("DRAWN CARD", "ไพ่ที่จั่ว")}</span>
           {displayedPendingCard !== null ? (
             <CardView card={displayedPendingCard} label={isStartingJokerPlacement ? "Starting Joker" : "Pending drawn card"} />
           ) : (
@@ -220,8 +224,8 @@ export function GameTable({
       {isTimeoutWarning && (
         <div className="timeout-warning" role="alert">
           <strong>{turnRemainingSeconds}</strong>
-          <span>ACT NOW</span>
-          <small>No action means immediate elimination</small>
+          <span>{tr("ACT NOW", "รีบตัดสินใจ")}</span>
+          <small>{tr("Timeout reveals your rack and eliminates you", "หมดเวลา = เปิดไพ่ทั้งมือและแพ้ทันที")}</small>
         </div>
       )}
 
@@ -233,13 +237,13 @@ export function GameTable({
         >
           <header className="seat-header">
             <div>
-              <span className="seat-kicker">Your rack</span>
+              <span className="seat-kicker">{tr("Your rack", "ไพ่ของคุณ")}</span>
               <span className="seat-player-name">
                 <strong>{viewerName}</strong>
                 {viewerAccountType === "guest" && <em className="guest-badge">GUEST</em>}
               </span>
             </div>
-            <span className="card-count">{viewer.rack.length} cards</span>
+            <span className="card-count">{viewer.rack.length} {tr("cards", "ใบ")}</span>
           </header>
           <div className={`rack own-rack ${isPlacing ? "is-inserting" : ""}`}>
             {isPlacing ? (
@@ -283,15 +287,15 @@ export function GameTable({
             )}
           </div>
           {canSelectPenalty && (
-            <p className="seat-hint">Select one unrevealed card, then confirm “Reveal selected”.</p>
+            <p className="seat-hint">{tr("Choose one hidden card, then press Reveal selected.", "เลือกไพ่คว่ำของคุณ 1 ใบ แล้วกด “เปิดไพ่ที่เลือก”")}</p>
           )}
           {isPlacing && (
             <p className="seat-hint">
               {game.phase === "place"
-                ? "Choose a + slot. Your drawn card will stay face-down."
+                ? tr("Choose a + slot. Your drawn card stays face-down.", "เลือกช่อง + ไพ่ที่จั่วมาจะถูกวางแบบคว่ำ")
                 : game.phase === "starter-place"
-                  ? `Place your opening-hand Joker in any + slot. ${game.pendingStartingJokerCardIds.length} remaining.`
-                  : "Wrong guess: choose a + slot for the revealed drawn card."}
+                  ? tr(`Place your Joker in any + slot · ${game.pendingStartingJokerCardIds.length} left`, `วาง Joker ในช่อง + ใดก็ได้ · เหลือ ${game.pendingStartingJokerCardIds.length} ใบ`)
+                  : tr("Wrong guess: choose a + slot for the revealed card.", "เดาผิด: เลือกช่อง + เพื่อวางไพ่ที่เปิดแล้ว")}
             </p>
           )}
         </article>

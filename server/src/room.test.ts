@@ -17,6 +17,7 @@ import { CipherDeckRoom } from "./CipherDeckRoom.ts";
 import { loadServerConfig } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
 import { InMemoryGuestSessionRegistry } from "./guestSessions.ts";
+import { InMemoryUserRoomRegistry } from "./userRoomRegistry.ts";
 
 const TEST_CONFIG: ServerConfig = {
   port: 2568,
@@ -124,9 +125,7 @@ async function readyAndStart(
       state.players.length === clients.length &&
       state.players.every((player) => player.ready),
   );
-  for (const client of clients) {
-    client.send("ready", true);
-  }
+  for (const client of clients.slice(1)) client.send("ready", true);
   await allReady;
   const started = waitForStateWhere(
     host,
@@ -162,6 +161,7 @@ async function completeStartingSelection(
           continue;
         }
         const clientIndex = state.players.findIndex((player) => player.id === playerId);
+        if (state.players[clientIndex]?.isBot === true) continue;
         const option = availableOptions.shift();
         assert.notEqual(clientIndex, -1);
         assert.notEqual(option, undefined);
@@ -198,11 +198,134 @@ async function completeStartingSelection(
           state = playerState;
         }
       }
-      if (state.status !== "playing") state = await requestState(observer);
+      if (state.status !== "playing") {
+        state = await waitForStateWhere(
+          observer,
+          (candidate) => candidate.status === "playing",
+          5_000,
+        );
+      }
     }
   }
   throw new Error("Starting-player selection did not finish.");
 }
+
+test("two human players can fill the final seat with a server bot", async () => {
+  testServer.sdk.auth.token = "user-bot-host";
+  const host = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "public",
+  });
+  host.onMessage("state", () => undefined);
+
+  testServer.sdk.auth.token = "user-bot-friend";
+  const friend = await testServer.sdk.joinById(host.roomId);
+  friend.onMessage("state", () => undefined);
+
+  const playing = await readyAndStart(host, [host, friend]);
+  assert.equal(playing.players.filter((player) => player.isBot).length, 1);
+  assert.equal(playing.players.filter((player) => !player.isBot).length, 2);
+  assert.equal(playing.game?.players.length, 3);
+  assert.equal(playing.status, "playing");
+
+  await friend.leave(true);
+  await host.leave(true);
+});
+
+test("an active host who leaves transfers ownership to a connected human", async () => {
+  testServer.sdk.auth.token = "user-active-host";
+  const host = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "public" });
+  host.onMessage("state", () => undefined);
+  testServer.sdk.auth.token = "user-next-host";
+  const friend = await testServer.sdk.joinById(host.roomId);
+  friend.onMessage("state", () => undefined);
+  await readyAndStart(host, [host, friend]);
+  const transferred = waitForStateWhere(friend, (state) => state.hostPlayerId === "user-next-host" && state.players.find((player) => player.id === "user-next-host")?.isHost === true);
+  await host.leave(true);
+  await transferred;
+  await friend.leave(true);
+});
+
+test("a host can start solo without readying and fill the room with bots", async () => {
+  testServer.sdk.auth.token = "user-solo-host";
+  const host = await testServer.sdk.create("cipher_deck", {
+    desiredPlayers: 3,
+    lobbyMode: "public",
+  });
+  host.onMessage("state", () => undefined);
+
+  const starting = waitForStateWhere(
+    host,
+    (state) => state.status === "starting" && state.startingSelection?.phase === "choosing",
+  );
+  host.send("start-game");
+  const playing = await completeStartingSelection(host, [host], await starting);
+  assert.equal(playing.players.filter((player) => player.isBot).length, 2);
+  assert.equal(playing.players.find((player) => player.id === "user-solo-host")?.ready, true);
+  assert.equal(playing.game?.players.length, 3);
+
+  await host.leave(true);
+});
+
+test("a spectator can watch a started code room without receiving hidden card values", async () => {
+  testServer.sdk.auth.token = "user-spectator-host";
+  const host = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" });
+  host.onMessage("state", () => undefined);
+  const starting = waitForStateWhere(host, (state) => state.status === "starting" && state.startingSelection?.phase === "choosing");
+  host.send("start-game");
+  await completeStartingSelection(host, [host], await starting);
+
+  testServer.sdk.auth.token = "user-spectator-viewer";
+  const spectator = await testServer.sdk.joinById(host.roomId, { spectator: true });
+  const state = await requestState(spectator);
+  assert.equal(state.isSpectator, true);
+  assert.equal(state.players.some((player) => player.id === "user-spectator-viewer"), false);
+  assert.equal(state.game?.players.flatMap((player) => player.rack).every((card) => card.revealed || card.kind === "hidden"), true);
+  assert.equal(state.game?.pendingStartingJokerCardIds.length, 0);
+
+  await spectator.leave(true);
+  await host.leave(true);
+});
+
+test("starting-card selection assigns a remaining option when a player times out", async () => {
+  CipherDeckRoom.turnTimerMillisecondsOverride = 40;
+  try {
+    testServer.sdk.auth.token = "user-start-choice-timeout";
+    const host = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "public" });
+    host.onMessage("state", () => undefined);
+    const choosing = waitForStateWhere(host, (state) => state.startingSelection?.phase === "choosing");
+    host.send("start-game");
+    await choosing;
+    const revealed = await waitForStateWhere(host, (state) => state.startingSelection?.phase === "revealed", 2_000);
+    assert.equal(revealed.startingSelection?.options.filter((option) => option.selectedByPlayerId !== null).length, 3);
+    await host.leave(true);
+  } finally {
+    CipherDeckRoom.turnTimerMillisecondsOverride = null;
+  }
+});
+
+test("authoritative game transitions persist a Redis-compatible recovery checkpoint", async () => {
+  let storedKey = "";
+  let storedValue = "";
+  CipherDeckRoom.recoveryStore = { setex: async (key, value) => { storedKey = key; storedValue = value; return "OK"; } };
+  try {
+    testServer.sdk.auth.token = "user-recovery-checkpoint";
+    const host = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "public" });
+    host.onMessage("state", () => undefined);
+    const starting = waitForStateWhere(host, (state) => state.startingSelection?.phase === "choosing");
+    host.send("start-game");
+    const playing = await completeStartingSelection(host, [host], await starting);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(storedKey, `ngame:room-recovery:${host.roomId}`);
+    const checkpoint = JSON.parse(storedValue) as { version: number; game: string; playerIds: string[] };
+    assert.equal(checkpoint.version, 1);
+    assert.deepEqual(checkpoint.playerIds, playing.game?.players.map((player) => player.id));
+    assert.equal(deserializeGameState(checkpoint.game).players.length, 3);
+    await host.leave(true);
+  } finally {
+    CipherDeckRoom.recoveryStore = null;
+  }
+});
 
 test("room rejects invalid credentials and invalid lobby sizes", async () => {
   const health = await testServer.http.get("/healthz", {
@@ -254,6 +377,44 @@ test("server config requires exact CORS origins", () => {
   );
 });
 
+test("distributed limiter rejects a message before it reaches the room handler", async () => {
+  CipherDeckRoom.distributedRateLimiter = { hincrbyex: async () => TEST_CONFIG.maxMessagesPerSecond + 1 };
+  try {
+    testServer.sdk.auth.token = "user-distributed-limit";
+    const client = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "public" });
+    const limited = client.waitForMessage("error") as Promise<{ code: string }>;
+    client.send("draw");
+    assert.equal((await limited).code, "RATE_LIMITED");
+    const serverRoom = testServer.getRoomById(client.roomId) as CipherDeckRoom;
+    assert.equal(serverRoom.getSnapshot(), null);
+    await client.leave(true);
+  } finally {
+    CipherDeckRoom.distributedRateLimiter = null;
+  }
+});
+
+test("deduction memory keeps public misses after the short guess feed rolls over", async () => {
+  testServer.sdk.auth.token = "user-deduction-memory";
+  const client = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "public" });
+  client.onMessage("state", () => undefined);
+  const serverRoom = testServer.getRoomById(client.roomId) as CipherDeckRoom;
+  const recordGuess = (serverRoom as unknown as { recordGuess(actor: string, target: string, card: string, guess: CardGuess, correct: boolean): void }).recordGuess.bind(serverRoom);
+  const misses: CardGuess[] = [
+    { kind: "joker" },
+    ...(["A", "2", "3", "4", "5", "6"] as const).flatMap((rank) => [
+      { kind: "standard" as const, rank, color: "red" as const },
+      { kind: "standard" as const, rank, color: "black" as const },
+    ]),
+  ];
+  const updated = waitForStateWhere(client, (state) => state.guessHistory.length === 12 && state.deductionMisses.length === 1);
+  misses.forEach((guess) => recordGuess("actor", "target", "hidden-card", guess, false));
+  (serverRoom as unknown as { broadcastState(): void }).broadcastState();
+  const state = await updated;
+  assert.equal(state.guessHistory.length, 12);
+  assert.equal(state.deductionMisses.find((entry) => entry.targetCardId === "hidden-card")?.guesses.length, 13);
+  await client.leave(true);
+});
+
 test("guest-session registry reserves one room and remains consumed after commit", () => {
   const registry = new InMemoryGuestSessionRegistry();
   const expiresAtMs = Date.now() + 60_000;
@@ -265,6 +426,29 @@ test("guest-session registry reserves one room and remains consumed after commit
   assert.equal(registry.commit("guest-session", "room-b"), true);
   assert.equal(registry.releaseReservation("guest-session", "room-b"), false);
   assert.equal(registry.reserve("guest-session", "room-c", expiresAtMs), "conflict");
+});
+
+test("user-room registry atomically allows only one active player room", async () => {
+  const registry = new InMemoryUserRoomRegistry();
+  const results = await Promise.all([registry.reserve("same-user", "room-a"), registry.reserve("same-user", "room-b")]);
+  assert.deepEqual(new Set(results), new Set(["created", "conflict"]));
+  assert.equal(await registry.release("same-user", "room-b"), false);
+  assert.equal(await registry.release("same-user", "room-a"), true);
+  assert.equal(await registry.reserve("same-user", "room-b"), "created");
+});
+
+test("one registered account cannot occupy player seats in two rooms", async () => {
+  testServer.sdk.auth.token = "user-one-room-only";
+  const first = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" });
+  first.onMessage("state", () => undefined);
+  await assert.rejects(
+    testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" }),
+    /already playing in another room/,
+  );
+  await first.leave(true);
+  const second = await testServer.sdk.create("cipher_deck", { desiredPlayers: 3, lobbyMode: "code" });
+  second.onMessage("state", () => undefined);
+  await second.leave(true);
 });
 
 test("guest can leave a waiting lobby but cannot switch rooms after match start", async () => {
@@ -471,7 +655,16 @@ test("three authenticated clients can play without leaking hidden cards", async 
     targetCardId: correctTarget?.id,
     guess: correctGuess,
   });
-  const afterCorrect = ownView(await correctState, activePlayerId);
+  const afterCorrectEnvelope = await correctState;
+  const afterCorrect = ownView(afterCorrectEnvelope, activePlayerId);
+  assert.deepEqual(afterCorrectEnvelope.guessHistory.at(-1), {
+    id: 1,
+    actorPlayerId: activePlayerId,
+    targetPlayerId: targetPlayer?.id,
+    targetCardId: correctTarget?.id,
+    guess: correctGuess,
+    correct: true,
+  });
   assert.equal(afterCorrect.currentPlayerId, activePlayerId);
   assert.equal(afterCorrect.phase, "guess");
   assert.equal(afterCorrect.correctGuessesThisTurn, 1);
@@ -620,6 +813,7 @@ test("a code-room host can run a private custom 40-card match", async () => {
     totalCards: 40,
     drawRounds: 2,
     jokerCount: 2,
+    botDifficulty: "hard",
   });
   const expectedSettings = {
     preset: "custom",
@@ -627,6 +821,7 @@ test("a code-room host can run a private custom 40-card match", async () => {
     totalCards: 40,
     drawRounds: 2,
     jokerCount: 2,
+    botDifficulty: "hard",
   } as const;
   assert.deepEqual((await settingsState).settings, expectedSettings);
   assert.deepEqual((await settingsApplied).settings, expectedSettings);

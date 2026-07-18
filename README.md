@@ -1,6 +1,8 @@
 # NGAME / CipherDeck
 
-NGAME is a browser-based, server-authoritative card deduction game. The MVP supports persistent Google profiles or an ephemeral one-match Guest session, 3–6 player Quick Match and six-digit code rooms, host/ready start, Classic or private Custom deck settings, six-card starting-player selection, authoritative turn timers, viewer-safe state, and reconnect/forfeit handling.
+NGAME is a browser-based, server-authoritative card deduction game. It supports solo play with bots, 3–6 seat Quick Match and six-digit private rooms, host moderation and ready checks, four selectable visual themes, English/Thai UI, a deduction notebook, guess feed, Daily Cipher, achievements, seasonal leaderboard, replay/share results, friends/party invites, safe preset emotes, and privacy-safe spectators. Redis coordinates multi-instance room discovery and queues match results while the API is unavailable.
+
+The game table is landscape-first on mobile, with safe-area support, compact opponent racks, a fixed action dock, and a viewport-safe guess picker. Portrait phones receive a rotate prompt.
 
 ## Quick links
 
@@ -23,11 +25,14 @@ NGAME is a browser-based, server-authoritative card deduction game. The MVP supp
 npm ci
 npm run typecheck
 npm test
+npm run test:mobile --workspace @ngame/client
 python -m pip install -e 'backend[dev]'
 python -m pytest backend/tests
 npm run build --workspace @ngame/client
 ```
 
 With local API and realtime services running, execute `npm run smoke:local --workspace @ngame/server` for a three-player signed-JWT, host/ready, starting-selection, privacy, action, and room-code smoke test. Backend and realtime tests also cover Google authentication, Guest JWTs, one-match Guest binding, profile updates, and refresh sessions.
+
+Run `npm run soak:bots --workspace @ngame/server` to exercise repeated complete bot matches and look for stuck phases or invalid transitions.
 
 Node.js 24.18 or newer and Python 3.12 or newer are required. The production target is an Ubuntu Server 24.04 LTS VM on Proxmox with Docker Compose and an external Nginx reverse proxy.

@@ -6,15 +6,19 @@
   "scripts": {
     "start": "node src/index.ts",
     "smoke:local": "node src/smoke-local.ts",
+    "soak:bots": "node src/soak-bots.ts",
     "test": "node --test src/room.test.ts",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
     "@colyseus/core": "0.17.44",
+    "@colyseus/redis-driver": "^0.17.7",
+    "@colyseus/redis-presence": "^0.17.7",
     "@colyseus/schema": "4.0.27",
     "@colyseus/ws-transport": "0.17.13",
     "@ngame/shared": "0.0.0",
     "express": "5.2.1",
+    "ioredis": "^5.11.1",
     "jose": "6.2.3"
   },
   "devDependencies": {

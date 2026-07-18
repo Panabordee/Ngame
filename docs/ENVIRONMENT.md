@@ -42,8 +42,8 @@ Password signup/signin no longer exists. Google users are persistent; Guest sess
 | `JWT_PUBLIC_KEY_FILE` | public key used by API and realtime |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | PostgreSQL credentials |
 | `DATABASE_URL` | overridden by Compose for the API container |
-| `REDIS_URL` | reserved for distributed presence/matchmaking |
+| `REDIS_URL` | Redis presence/driver, distributed rate buckets, recovery checkpoints, and match-result outbox |
 | `RECONNECT_TIMEOUT_SECONDS` | reconnect grace period, default `30` |
-| `MAX_ROOM_MESSAGES_PER_SECOND` | per-client realtime limit, default `20` |
+| `MAX_ROOM_MESSAGES_PER_SECOND` | per-connection and Redis-backed per-user realtime limit, default `20` |
 
 The realtime container receives only its JWT, CORS, and room settings; it does not receive Google or database secrets.

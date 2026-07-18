@@ -14,6 +14,10 @@ export interface AuthResponse {
   readonly expires_in: number;
   readonly user: AuthUser;
 }
+export interface PlayerStats { readonly games: number; readonly wins: number; readonly guesses: number; readonly correct_guesses: number; readonly current_streak: number; readonly achievements: readonly string[]; readonly recent_matches: readonly { readonly match_id: string; readonly won: boolean; readonly guesses: number; readonly correct_guesses: number; readonly cards_revealed: number; readonly completed_at: string }[]; }
+export interface Leaderboard { readonly season: string; readonly entries: readonly { readonly rank: number; readonly user_id: string; readonly display_name: string; readonly games: number; readonly wins: number; readonly rating: number }[]; }
+export interface DailyPuzzle { readonly puzzle_id: string; readonly lower_rank: string; readonly upper_rank: string; readonly candidates: readonly string[]; }
+export interface FriendItem { readonly connection_id: string; readonly user_id: string; readonly display_name: string; readonly username: string | null; readonly status: "incoming" | "outgoing" | "friend" | "blocked"; }
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const GUEST_SESSION_KEY = "ngame.guest-session.v1";
@@ -147,6 +151,46 @@ export async function updateProfile(
     throw new Error(body?.detail ?? `Profile update failed (${response.status}).`);
   }
   return (await response.json()) as AuthUser;
+}
+
+export async function loadPlayerStats(accessToken: string): Promise<PlayerStats> {
+  const response = await fetch(`${API_URL}/matches/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error(`Match history request failed (${response.status}).`);
+  return response.json() as Promise<PlayerStats>;
+}
+
+export async function loadLeaderboard(accessToken: string, season: "current" | "all-time" = "current"): Promise<Leaderboard> {
+  const response = await fetch(`${API_URL}/matches/leaderboard?season=${season}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error(`Leaderboard request failed (${response.status}).`);
+  return response.json() as Promise<Leaderboard>;
+}
+
+export async function loadDailyPuzzle(): Promise<DailyPuzzle> {
+  const response = await fetch(`${API_URL}/puzzles/daily`);
+  if (!response.ok) throw new Error(`Daily puzzle request failed (${response.status}).`);
+  return response.json() as Promise<DailyPuzzle>;
+}
+
+export async function guessDailyPuzzle(candidate: string): Promise<boolean> {
+  const response = await fetch(`${API_URL}/puzzles/daily/guess`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidate }) });
+  if (!response.ok) throw new Error(`Daily puzzle guess failed (${response.status}).`);
+  return ((await response.json()) as { correct: boolean }).correct;
+}
+
+export async function loadFriends(accessToken: string): Promise<readonly FriendItem[]> {
+  const response = await fetch(`${API_URL}/social/friends`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error(`Friends request failed (${response.status}).`);
+  return ((await response.json()) as { items: FriendItem[] }).items;
+}
+
+export async function socialAction(accessToken: string, path: string, method: "POST" | "PATCH" | "DELETE", body?: object): Promise<void> {
+  const init: RequestInit = { method, headers: { Authorization: `Bearer ${accessToken}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) } };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const response = await fetch(`${API_URL}/social${path}`, init);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(payload?.detail ?? `Social action failed (${response.status}).`);
+  }
 }
 
 export async function logout(): Promise<void> {

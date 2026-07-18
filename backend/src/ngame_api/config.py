@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     oauth_state_secret: str = "replace-this-development-oauth-state-secret"
     google_auth_enabled: bool = False
     guest_auth_enabled: bool = True
+    match_result_secret: str = "development-match-result-secret"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
@@ -70,4 +71,6 @@ class Settings(BaseSettings):
                 raise ValueError("production requires a unique OAuth state secret")
             if not self.google_auth_enabled:
                 raise ValueError("production requires Google authentication")
+            if self.match_result_secret.startswith("development-") or self.match_result_secret.startswith("replace-") or len(self.match_result_secret) < 32:
+                raise ValueError("production requires a strong internal match result secret")
         return self

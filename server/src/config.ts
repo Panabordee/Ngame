@@ -13,6 +13,9 @@ export interface ServerConfig {
   readonly corsAllowedOrigins: readonly string[];
   readonly reconnectSeconds: number;
   readonly maxMessagesPerSecond: number;
+  readonly apiInternalUrl?: string;
+  readonly matchResultSecret?: string;
+  readonly redisUrl?: string;
 }
 
 function integerValue(value: string | undefined, fallback: number, name: string): number {
@@ -51,6 +54,7 @@ function originList(value: string | undefined): string[] {
 export function loadServerConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): ServerConfig {
+  const redisUrl = environment.REDIS_URL?.trim();
   return {
     port: integerValue(environment.REALTIME_PORT, 2567, "REALTIME_PORT"),
     hostname: environment.REALTIME_HOST ?? "0.0.0.0",
@@ -69,5 +73,8 @@ export function loadServerConfig(
       20,
       "MAX_ROOM_MESSAGES_PER_SECOND",
     ),
+    apiInternalUrl: environment.API_INTERNAL_URL ?? "http://localhost:8000",
+    matchResultSecret: environment.MATCH_RESULT_SECRET ?? "development-match-result-secret",
+    ...(redisUrl === undefined || redisUrl.length === 0 ? {} : { redisUrl }),
   };
 }
