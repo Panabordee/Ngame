@@ -4,6 +4,7 @@ import {
   RANKS,
   type CardColor,
   type GuestDisplayNameUpdatedMessage,
+  type GuessHistoryEntry,
   type Rank,
   type RoomSettings,
   type RoomSettingsAppliedMessage,
@@ -66,6 +67,7 @@ const INITIAL_SETTINGS: RoomSettings = {
 };
 
 type SettingsSaveStatus = "synced" | "dirty" | "applying" | "approved";
+type GuessAnnouncement = { entry: GuessHistoryEntry; phase: "guess" | "result" };
 const THEME_OPTIONS: readonly { id: ThemeId; label: string }[] = [
   { id: "classic", label: "Classic Emerald" },
   { id: "ocean", label: "Deep Ocean" },
@@ -109,6 +111,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [guess, setGuess] = useState<GuessForm>(INITIAL_GUESS);
   const [selectedPenaltyCardId, setSelectedPenaltyCardId] = useState("");
+  const [guessAnnouncement, setGuessAnnouncement] = useState<GuessAnnouncement | null>(null);
+  const announcedGuessId = useRef(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [guessFeedOpen, setGuessFeedOpen] = useState(false);
@@ -151,6 +155,7 @@ export function App() {
   };
   const game = state?.game ?? null;
   const otherPlayerGuesses = state?.guessHistory.filter((entry) => entry.actorPlayerId !== auth?.user.id) ?? [];
+  const latestGuess = state?.guessHistory.at(-1);
   const notebookTargets = game?.players
     .filter((player) => player.id !== auth?.user.id && !player.eliminated)
     .flatMap((player) => player.rack.filter((card) => !card.revealed).map((card, index) => ({
@@ -240,7 +245,7 @@ export function App() {
   }, [soundEnabled, reducedMotion, highContrast, cardScale]);
 
   useEffect(() => {
-    const latest = state?.guessHistory.at(-1);
+    const latest = latestGuess;
     if (!soundEnabled || latest === undefined || latest.id <= lastGuessSoundId.current) return;
     lastGuessSoundId.current = latest.id;
     const context = new AudioContext();
@@ -253,6 +258,23 @@ export function App() {
     oscillator.start(); oscillator.stop(context.currentTime + 0.18);
     oscillator.addEventListener("ended", () => void context.close());
   }, [soundEnabled, state?.guessHistory]);
+
+  useEffect(() => {
+    const latest = state?.guessHistory.at(-1);
+    if (latest === undefined || latest.id <= announcedGuessId.current) return;
+    announcedGuessId.current = latest.id;
+    setGuessAnnouncement({ entry: latest, phase: "guess" });
+    const revealResult = window.setTimeout(() => {
+      setGuessAnnouncement((current) => current?.entry.id === latest.id ? { entry: latest, phase: "result" } : current);
+    }, 700);
+    const dismiss = window.setTimeout(() => {
+      setGuessAnnouncement((current) => current?.entry.id === latest.id ? null : current);
+    }, 2_050);
+    return () => {
+      window.clearTimeout(revealResult);
+      window.clearTimeout(dismiss);
+    };
+  }, [latestGuess?.id]);
 
   useEffect(() => {
     let active = true;
@@ -842,6 +864,23 @@ export function App() {
 
       {error !== null && <div className="error-banner floating-error"><span>{error}</span><button onClick={() => setError(null)}>×</button></div>}
       {tableEmote !== null && <div className="table-emote-toast"><strong>{playerLabel(tableEmote.actorPlayerId)}</strong><span>{tableEmote.emote === "thinking" ? "Hmm…" : tableEmote.emote === "nice" ? tr("Nice!", "เยี่ยม!") : tableEmote.emote === "oops" ? tr("Oops", "พลาดแล้ว") : "GG"}</span></div>}
+      {guessAnnouncement !== null && (
+        <div className={`guess-announcer is-${guessAnnouncement.phase} ${guessAnnouncement.entry.correct ? "is-correct" : "is-wrong"}`} role="status" aria-live="assertive">
+          <span>{guessAnnouncement.phase === "guess" ? tr("CALLING", "ประกาศคำตอบ") : tr("RESULT", "ผลการเดา")}</span>
+          {guessAnnouncement.phase === "guess" ? (
+            <>
+              <strong>{playerLabel(guessAnnouncement.entry.actorPlayerId)}</strong>
+              <p>{tr("calls", "เดาไพ่ของ")} {playerLabel(guessAnnouncement.entry.targetPlayerId)}</p>
+              <b>{guessAnnouncement.entry.guess.kind === "joker" ? "JOKER" : `${guessAnnouncement.entry.guess.rank} · ${guessAnnouncement.entry.guess.color === "red" ? tr("RED", "แดง") : tr("BLACK", "ดำ")}`}</b>
+            </>
+          ) : (
+            <>
+              <strong>{guessAnnouncement.entry.correct ? tr("CORRECT!", "ถูก!") : tr("WRONG!", "ผิด!")}</strong>
+              <p>{guessAnnouncement.entry.correct ? tr("The card is revealed", "เปิดไพ่เป้าหมาย") : tr("The card stays hidden", "ไพ่เป้าหมายยังคว่ำอยู่")}</p>
+            </>
+          )}
+        </div>
+      )}
 
       {utilityOpen && <div className="modal-backdrop" onMouseDown={() => setUtilityOpen(false)}><section className="utility-modal" onMouseDown={(event) => event.stopPropagation()}><header><h2>{tr("Menu", "เมนู")}</h2><button className="modal-close-button" onClick={() => setUtilityOpen(false)}>×</button></header><div className="utility-grid"><button onClick={() => { setUtilityOpen(false); setRulesOpen(true); }}>{tr("How to play", "วิธีเล่น")}</button><button onClick={() => { setUtilityOpen(false); setTutorialStep(0); }}>{tr("Tutorial", "สอนเล่น")}</button><button onClick={() => { setUtilityOpen(false); setPreferencesOpen(true); }}>{tr("Settings", "ตั้งค่า")}</button><button onClick={() => { setUtilityOpen(false); void openDaily(); }}>{tr("Daily Cipher", "โจทย์รายวัน")}</button>{auth.user.account_type === "registered" && <button onClick={() => { setUtilityOpen(false); void openLeaderboard(); }}>{tr("Leaderboard", "อันดับ")}</button>}{auth.user.account_type === "registered" && <button onClick={() => { setUtilityOpen(false); void openFriends(); }}>{tr("Friends", "เพื่อน")}</button>}</div></section></div>}
 
@@ -927,7 +966,7 @@ export function App() {
                     setSelectedPenaltyCardId("");
                   }}>{tr("REVEAL SELECTED", "เปิดไพ่ที่เลือก")}</button>
                 </div>
-                <p className="target-readout">{guess.targetCardId ? "เลือกหน้าไพ่และสีในกล่องข้างไพ่ที่เลือก" : isMyTurn && game.phase === "guess" ? "แตะไพ่คว่ำของคู่แข่งเพื่อเริ่มเดา" : "ระบบจะแจ้งเมื่อถึงตาคุณ"}</p>
+                <p className="target-readout">{guess.targetCardId ? tr("Choose a rank and color beside the selected card", "เลือกหน้าไพ่และสีในกล่องข้างไพ่ที่เลือก") : isMyTurn && game.phase === "guess" ? tr("Tap a hidden opponent card to make a guess", "แตะไพ่คว่ำของคู่แข่งเพื่อเริ่มเดา") : tr("You will be prompted when it is your turn", "ระบบจะแจ้งเมื่อถึงตาคุณ")}</p>
               </section>
               <div className="emote-bar" aria-label={tr("Table emotes", "อีโมตบนโต๊ะ")}>{(["thinking", "nice", "oops", "good-game"] as const).map((emote) => <button key={emote} type="button" onClick={() => room.send("emote", { emote })}>{emote === "thinking" ? "Hmm…" : emote === "nice" ? tr("Nice!", "เยี่ยม!") : emote === "oops" ? tr("Oops", "พลาดแล้ว") : "GG"}</button>)}</div>
               <section className={`guess-feed ${guessFeedOpen ? "is-open" : ""}`}>

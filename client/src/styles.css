@@ -1529,6 +1529,64 @@ summary:focus-visible {
   color: var(--danger);
 }
 
+.guess-announcer {
+  position: fixed;
+  z-index: 80;
+  top: 16%;
+  left: 50%;
+  display: grid;
+  min-width: min(86vw, 310px);
+  gap: 0.2rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--gold) 42%, transparent);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  transform: translateX(-50%);
+  animation: announcer-in 180ms ease-out both;
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.guess-announcer > span {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.guess-announcer strong {
+  color: var(--cream);
+  font-size: 1.35rem;
+}
+
+.guess-announcer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.guess-announcer b {
+  margin-top: 0.35rem;
+  color: var(--gold);
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+}
+
+.guess-announcer.is-result.is-correct {
+  border-color: color-mix(in srgb, #4de0a0 58%, transparent);
+}
+
+.guess-announcer.is-result.is-correct strong { color: #69edb3; }
+.guess-announcer.is-result.is-wrong { border-color: color-mix(in srgb, var(--danger) 58%, transparent); }
+.guess-announcer.is-result.is-wrong strong { color: var(--danger); }
+
+@keyframes announcer-in {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.98); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
 .settings-field {
   display: grid;
   min-width: 0;

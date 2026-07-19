@@ -984,6 +984,13 @@ export class CipherDeckRoom extends Room<{
 
   private scheduleBots(): void {
     this.clearBotTimer();
+    const delayMs = this.startingSelection?.phase === "choosing"
+      ? 350
+      : this.game?.phase === "guess"
+        ? 1_250
+        : this.game?.phase === "draw"
+          ? 750
+          : 950;
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       try {
@@ -991,7 +998,7 @@ export class CipherDeckRoom extends Room<{
       } catch (error) {
         console.error("CipherDeck bot action failed.", error);
       }
-    }, 350);
+    }, delayMs);
   }
 
   private runBotStep(): void {
