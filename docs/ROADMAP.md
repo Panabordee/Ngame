@@ -1,6 +1,6 @@
-# CipherDeck product backlog (draft)
+# CipherDeck implementation record
 
-This document records requested future work. It does not override `GAME_DESIGN.md`; a feature becomes authoritative only after its open rule decisions are resolved and the canonical design is updated.
+This document records the product work delivered through 2026-07-19. It does not override the canonical rules in `GAME_DESIGN.md`.
 
 Status (2026-07-19): items 1–9 are implemented. Deck administration uses role-protected validated metadata endpoints and an audit log; runtime images remain in object storage. The canonical rules live in `GAME_DESIGN.md`.
 

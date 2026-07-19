@@ -37,13 +37,7 @@
 - If the player does not reconnect in time, permanently reveal every card in their rack and eliminate them by forfeit. If they had drawn a card but had not inserted it yet, insert and reveal it before resolving the forfeit so no card disappears from authoritative state.
 - If the forfeiting player owned the current turn, advance to the next active player. Apply the normal last-player-standing win condition after every forfeit.
 
-## 3. Future Differentiators
-Deferred until after the current solo/3–6 player loop is complete and stable; these are not part of the implemented rules:
-- Add a "Wild/Cipher" card that can't be guessed directly and needs a special ability to resolve.
-- Add a 2v2 team mode with a limited number of shared hint tokens.
-- Add ranked/MMR matchmaking for the online mode.
-
-## 4. Recommended Tech Stack (ordered: easiest → Steam-ready)
+## 3. Recommended Tech Stack (ordered: easiest → Steam-ready)
 
 ### Phase 1 — Web Multiplayer
 - Frontend: React + TypeScript + Vite.
@@ -58,12 +52,12 @@ Deferred until after the current solo/3–6 player loop is complete and stable; 
 - The realtime backend (Colyseus) stays the same — only the client wrapper changes, the protocol doesn't.
 - Register on Steamworks ($100 one-time fee per game) once you're ready to publish.
 
-## 5. Rough Roadmap
+## 4. Rough Roadmap
 1. Local prototype (3–6 browser sessions) — validate the ruleset.
 2. Connect the Colyseus room across LAN and internet deployments.
 3. Complete matchmaking, match history, and leaderboard.
 4. Polish UI/UX, sound, animation.
 5. Wrap as a desktop build → test Steamworks in sandbox → submit via Steam Direct.
 
-## 6. Legal/Naming Note
+## 5. Legal/Naming Note
 Use the CipherDeck working name and original artwork, text, visual identity, and branding. Review the final product name before public release.

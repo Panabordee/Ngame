@@ -31,12 +31,12 @@ https://ngame-api.ce-nacl.com/auth/google/callback
 | Service | Responsibility | Public exposure |
 | --- | --- | --- |
 | `frontend` | Serve the built React/Vite application | Through Nginx only |
-| `api` | Authentication, users, and profiles; future match history | Through Nginx only |
+| `api` | Authentication, profiles, match history, social data, leaderboards, puzzles, and deck metadata | Through Nginx only |
 | `realtime` | Matchmaking and authoritative CipherDeck rooms | Through Nginx only |
 | `postgres` | Persistent relational data | Never public |
-| `redis` | Provisioned for future rate limits, coordination, and room snapshots | Never public |
+| `redis` | Presence/discovery, rate limits, identity/room registries, recovery checkpoints, and result outbox | Never public |
 
-FastAPI owns persistent application data and Colyseus owns live match state. The planned match-history phase will add an authenticated internal FastAPI result endpoint for Colyseus. That endpoint is not part of the current MVP. Neither the frontend nor Colyseus writes directly to PostgreSQL.
+FastAPI owns persistent application data and Colyseus owns live match state. Colyseus reports completed registered-player results through an authenticated internal FastAPI endpoint; neither the frontend nor Colyseus writes directly to PostgreSQL.
 
 ## Networks and firewall
 
@@ -56,4 +56,4 @@ Persist these paths as named volumes:
 - PostgreSQL data
 - Redis data when persistence is enabled
 
-Back up PostgreSQL with scheduled logical dumps in addition to Proxmox VM backups. A VM snapshot alone is not the database backup strategy. The first release preserves matches across short network disconnects but not a realtime container/VM crash; Redis-backed room snapshots can be added after the basic loop is stable.
+Back up PostgreSQL with scheduled logical dumps in addition to Proxmox VM backups. A VM snapshot alone is not the database backup strategy. Short disconnects reconnect to the live room, and authoritative transitions are checkpointed to Redis for one hour. Recreating a room and reconnecting all clients automatically after a realtime container/VM crash still requires orchestration.

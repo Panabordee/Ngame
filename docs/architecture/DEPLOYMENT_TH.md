@@ -31,12 +31,12 @@ https://ngame-api.ce-nacl.com/auth/google/callback
 | Service | หน้าที่ | การเปิดสู่ภายนอก |
 | --- | --- | --- |
 | `frontend` | ให้บริการ React/Vite build | ผ่าน Nginx เท่านั้น |
-| `api` | Authentication, user, profile และ match history ในอนาคต | ผ่าน Nginx เท่านั้น |
+| `api` | Authentication, profile, match history, social, leaderboard, puzzle และ deck metadata | ผ่าน Nginx เท่านั้น |
 | `realtime` | Matchmaking และ authoritative CipherDeck room | ผ่าน Nginx เท่านั้น |
 | `postgres` | Persistent relational data | ห้ามเปิดสาธารณะ |
-| `redis` | เตรียมไว้สำหรับ rate limit, coordination และ room snapshot | ห้ามเปิดสาธารณะ |
+| `redis` | Presence/discovery, rate limit, identity/room registry, recovery checkpoint และ result outbox | ห้ามเปิดสาธารณะ |
 
-FastAPI ดูแล persistent application data ส่วน Colyseus ดูแล live match state ระยะ match-history จะเพิ่ม internal result endpoint ที่ยืนยันตัวตนแล้ว ปัจจุบัน endpoint นี้ยังไม่อยู่ใน MVP ทั้ง frontend และ Colyseus ห้ามเขียน PostgreSQL โดยตรง
+FastAPI ดูแล persistent application data ส่วน Colyseus ดูแล live match state และส่งผลผู้เล่นที่ลงทะเบียนผ่าน internal FastAPI endpoint ที่ยืนยันตัวตนแล้ว ทั้ง frontend และ Colyseus ห้ามเขียน PostgreSQL โดยตรง
 
 ## Network และ Firewall
 
@@ -56,4 +56,4 @@ FastAPI ดูแล persistent application data ส่วน Colyseus ดูแ
 - PostgreSQL data
 - Redis data เมื่อเปิด persistence
 
-ทำ PostgreSQL logical dump ตาม schedule เพิ่มจาก Proxmox VM backup เพราะ VM snapshot อย่างเดียวไม่ใช่กลยุทธ์ database backup เกมรองรับ network disconnect ระยะสั้น แต่ยังไม่รองรับ realtime container/VM crash จนกว่าจะเพิ่ม Redis-backed room snapshot
+ทำ PostgreSQL logical dump ตาม schedule เพิ่มจาก Proxmox VM backup เพราะ VM snapshot อย่างเดียวไม่ใช่กลยุทธ์ database backup เกม reconnect กลับ live room เมื่อหลุดระยะสั้นและ checkpoint authoritative transition ใน Redis หนึ่งชั่วโมง แต่การสร้างห้องและพา client ทั้งหมดกลับอัตโนมัติหลัง realtime container/VM crash ยังต้องมี orchestrator
