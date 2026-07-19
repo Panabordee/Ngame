@@ -12,6 +12,7 @@ The game table is landscape-first on mobile, with safe-area support, compact opp
 - [Game rules](docs/GAME_RULES.md)
 - [Local development](docs/LOCAL_DEVELOPMENT.md)
 - [Docker, build, and deployment](docs/BUILD_AND_DEPLOY.md)
+- [Production commands and Thai AI deployment prompt](docs/PRODUCTION_RUN_PROMPT_TH.md)
 - [Ports](docs/PORTS.md)
 - [Environment variables](docs/ENVIRONMENT.md)
 - [Realtime protocol](docs/REALTIME_PROTOCOL.md)

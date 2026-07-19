@@ -10,6 +10,7 @@ NGAME คือเกมไพ่ deduction บนเบราว์เซอร
 - [กติกาเกม](docs/GAME_RULES_TH.md)
 - [การพัฒนาและรันบนเครื่อง](docs/LOCAL_DEVELOPMENT_TH.md)
 - [Docker, การ build และ deploy](docs/BUILD_AND_DEPLOY_TH.md)
+- [วิธีขึ้น Production จริงและ Prompt สำหรับ AI](docs/PRODUCTION_RUN_PROMPT_TH.md)
 - [พอร์ตที่ใช้](docs/PORTS_TH.md)
 - [ตัวแปร environment](docs/ENVIRONMENT_TH.md)
 - [Realtime protocol](docs/REALTIME_PROTOCOL_TH.md)

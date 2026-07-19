@@ -11,6 +11,7 @@ English is kept in the original filename. Thai translations use the `_TH.md` suf
 | Rules / กติกา | [Game rules](GAME_RULES.md) | [กติกาเกม](GAME_RULES_TH.md) |
 | Local development / รันบนเครื่อง | [Local development](LOCAL_DEVELOPMENT.md) | [พัฒนาบนเครื่อง](LOCAL_DEVELOPMENT_TH.md) |
 | Build and deploy / Build และ deploy | [Build and deploy](BUILD_AND_DEPLOY.md) | [Build และ deploy](BUILD_AND_DEPLOY_TH.md) |
+| Production run prompt / Prompt ขึ้นระบบจริง | — | [Production prompt](PRODUCTION_RUN_PROMPT_TH.md) |
 | Environment / ตัวแปรระบบ | [Environment](ENVIRONMENT.md) | [Environment ไทย](ENVIRONMENT_TH.md) |
 | Ports / พอร์ต | [Ports](PORTS.md) | [พอร์ต](PORTS_TH.md) |
 | Realtime protocol | [Protocol](REALTIME_PROTOCOL.md) | [Protocol ไทย](REALTIME_PROTOCOL_TH.md) |
