@@ -116,11 +116,11 @@ export function App() {
   const [notebookCardId, setNotebookCardId] = useState("");
   const [notebookExcluded, setNotebookExcluded] = useState<Record<string, readonly string[]>>({});
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [utilityOpen, setUtilityOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("cipherdeck-sound") !== "off");
   const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem("cipherdeck-reduced-motion") === "on");
   const [highContrast, setHighContrast] = useState(() => localStorage.getItem("cipherdeck-high-contrast") === "on");
-  const [colorBlind, setColorBlind] = useState(() => localStorage.getItem("cipherdeck-colorblind") === "on");
   const [cardScale, setCardScale] = useState(() => Number(localStorage.getItem("cipherdeck-card-scale") ?? 100));
   const [profileName, setProfileName] = useState("");
   const [profileUsername, setProfileUsername] = useState("");
@@ -167,7 +167,6 @@ export function App() {
   const guestRoomNameChanged =
     normalizedGuestRoomName.length > 0 &&
     normalizedGuestRoomName !== roomPlayer?.displayName;
-  const connectionLabel = connectionStatus === "connected" ? tr("Online", "ออนไลน์") : connectionStatus === "connecting" ? tr("Connecting", "กำลังเชื่อมต่อ") : connectionStatus === "reconnecting" ? tr("Reconnecting", "กำลังเชื่อมต่อใหม่") : tr("Offline", "ออฟไลน์");
   const matchStatusLabel = state?.status === "waiting" ? tr("Lobby", "ห้องรอ") : state?.status === "starting" ? tr("Starting", "กำลังเริ่มเกม") : state?.status === "playing" ? tr("Playing", "กำลังเล่น") : state?.status === "paused" ? tr("Paused", "หยุดรอผู้เล่น") : state?.status === "finished" ? tr("Finished", "จบเกม") : null;
   const isMyTurn = game?.currentPlayerId === auth?.user.id;
   const canHostStart =
@@ -227,14 +226,12 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.motion = reducedMotion ? "reduced" : "full";
     document.documentElement.dataset.contrast = highContrast ? "high" : "normal";
-    document.documentElement.dataset.colorblind = colorBlind ? "on" : "off";
     document.documentElement.style.setProperty("--card-scale", `${cardScale / 100}`);
     localStorage.setItem("cipherdeck-sound", soundEnabled ? "on" : "off");
     localStorage.setItem("cipherdeck-reduced-motion", reducedMotion ? "on" : "off");
     localStorage.setItem("cipherdeck-high-contrast", highContrast ? "on" : "off");
-    localStorage.setItem("cipherdeck-colorblind", colorBlind ? "on" : "off");
     localStorage.setItem("cipherdeck-card-scale", String(cardScale));
-  }, [soundEnabled, reducedMotion, highContrast, colorBlind, cardScale]);
+  }, [soundEnabled, reducedMotion, highContrast, cardScale]);
 
   useEffect(() => {
     const latest = state?.guessHistory.at(-1);
@@ -652,18 +649,12 @@ export function App() {
     return (
       <main className="auth-screen">
         <div className="appearance-controls appearance-controls-auth">
-          <label className="theme-picker"><span>{tr("Theme", "ธีม")}</span><select value={theme} onChange={(event) => setTheme(event.target.value as ThemeId)}>{THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="theme-picker"><select aria-label={tr("Theme", "ธีม")} value={theme} onChange={(event) => setTheme(event.target.value as ThemeId)}>{THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
           <button type="button" className="language-switch" onClick={() => setLanguage(language === "en" ? "th" : "en")} aria-label="Change language">{language === "en" ? "ไทย" : "EN"}</button>
-        </div>
-        <div className="auth-art" aria-hidden="true">
-          <span className="brand-rune">◇</span>
-          <p>{tr("READ THE PATTERN", "อ่านไพ่ให้ออก ก่อนคู่แข่งอ่านคุณ")}</p>
         </div>
         <section className="auth-panel">
           <header className="brand-lockup">
-            <span className="eyebrow">{tr("A CARD DEDUCTION GAME FOR 3–6", "เกมไพ่จับพิรุธ 3–6 คน")}</span>
             <h1>CIPHER<span>DECK</span></h1>
-            <p>{tr("Reveal every opponent rack and be the last player with hidden cards.", "เดาไพ่ของคู่แข่ง เปิดให้หมด และเป็นผู้เล่นคนสุดท้ายที่ยังซ่อนไพ่ไว้ได้")}</p>
           </header>
           {error !== null && <p className="error-banner">{error}</p>}
           <button className="google-button" onClick={startGoogleLogin}>
@@ -692,9 +683,6 @@ export function App() {
               </button>
             </div>
           </form>
-          <small className="auth-note">
-            {tr("Google keeps your profile. Guest access lasts for one match and does not create an account.", "บัญชี Google จะบันทึกโปรไฟล์ไว้ ส่วน Guest ใช้เล่นได้หนึ่งแมตช์และไม่บันทึกบัญชี")}
-          </small>
         </section>
       </main>
     );
@@ -705,42 +693,15 @@ export function App() {
       <div className="orientation-hint" role="status"><span>↻</span><strong>{tr("Rotate your phone", "หมุนมือถือเป็นแนวนอน")}</strong><small>{tr("CipherDeck is designed for landscape play.", "CipherDeck ออกแบบให้เล่นในแนวนอน")}</small></div>
       <header className="topbar">
         <div className="mini-brand"><span>◇</span><strong>CIPHERDECK</strong></div>
-        <div className="topbar-status">
-          <span className={`connection-dot status-${connectionStatus}`} />
-          {connectionLabel}
-          {matchStatusLabel !== null && <span className={`match-status match-${state?.status}`}>{matchStatusLabel}</span>}
-        </div>
         <div className="topbar-account">
-          <label className="theme-picker theme-picker-topbar"><span>{tr("Theme", "ธีม")}</span><select value={theme} onChange={(event) => setTheme(event.target.value as ThemeId)}>{THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="theme-picker theme-picker-topbar"><select aria-label={tr("Theme", "ธีม")} value={theme} onChange={(event) => setTheme(event.target.value as ThemeId)}>{THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
           <button type="button" className="language-switch" onClick={() => setLanguage(language === "en" ? "th" : "en")} aria-label="Change language">{language === "en" ? "ไทย" : "EN"}</button>
-          <button type="button" className="language-switch" onClick={() => setPreferencesOpen(true)} aria-label={tr("Accessibility and sound", "การช่วยการเข้าถึงและเสียง")}>Aa</button>
-          <button type="button" className="language-switch" onClick={openDaily} aria-label={tr("Daily Cipher", "โจทย์ประจำวัน")}>◇</button>
-          {auth.user.account_type === "registered" && <button type="button" className="language-switch" onClick={openLeaderboard} aria-label={tr("Leaderboard", "ตารางอันดับ")}>♕</button>}
-          {auth.user.account_type === "registered" && <button type="button" className="language-switch" onClick={openFriends} aria-label={tr("Friends", "เพื่อน")}>♧</button>}
-          <button
-            type="button"
-            className="help-icon-button"
-            aria-label="เปิดวิธีการเล่น"
-            title="วิธีการเล่น"
-            onClick={() => {
-              setProfileOpen(false);
-              setRulesOpen(true);
-            }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M9.8 9a2.35 2.35 0 0 1 4.48 1c0 1.78-2.28 2.02-2.28 3.55" />
-              <path d="M12 17.2h.01" />
-            </svg>
-          </button>
+          <button type="button" className="language-switch menu-button" onClick={() => setUtilityOpen(true)}>{tr("Menu", "เมนู")}</button>
           <div className="profile-chip">
             <span>{auth.user.display_name.slice(0, 1).toUpperCase()}</span>
-            <div>
-              <strong>{auth.user.display_name}</strong>
-              <small>{auth.user.account_type === "guest" ? "Guest · 1 แมตช์" : auth.user.username === null ? auth.user.email : `@${auth.user.username}`}</small>
-            </div>
-            {auth.user.account_type === "registered" && <button type="button" onClick={openProfile}>โปรไฟล์</button>}
-            <button type="button" onClick={() => void signOut()}>ออกจากระบบ</button>
+            <strong>{auth.user.display_name}</strong>
+            {auth.user.account_type === "registered" && <button type="button" onClick={openProfile}>{tr("Profile", "โปรไฟล์")}</button>}
+            <button type="button" aria-label={tr("Sign out", "ออกจากระบบ")} title={tr("Sign out", "ออกจากระบบ")} onClick={() => void signOut()}>↗</button>
           </div>
         </div>
       </header>
@@ -871,7 +832,9 @@ export function App() {
       {error !== null && <div className="error-banner floating-error"><span>{error}</span><button onClick={() => setError(null)}>×</button></div>}
       {tableEmote !== null && <div className="table-emote-toast"><strong>{playerLabel(tableEmote.actorPlayerId)}</strong><span>{tableEmote.emote === "thinking" ? "Hmm…" : tableEmote.emote === "nice" ? tr("Nice!", "เยี่ยม!") : tableEmote.emote === "oops" ? tr("Oops", "พลาดแล้ว") : "GG"}</span></div>}
 
-      {preferencesOpen && <div className="modal-backdrop" onMouseDown={() => setPreferencesOpen(false)}><section className="preference-modal" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="eyebrow">{tr("PREFERENCES", "การตั้งค่า")}</span><h2>{tr("Sound & accessibility", "เสียงและการช่วยการเข้าถึง")}</h2></div><button className="modal-close-button" onClick={() => setPreferencesOpen(false)}>×</button></header><label><span>{tr("Sound effects", "เอฟเฟกต์เสียง")}</span><input type="checkbox" checked={soundEnabled} onChange={(event) => setSoundEnabled(event.target.checked)} /></label><label><span>{tr("Reduce motion", "ลดการเคลื่อนไหว")}</span><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /></label><label><span>{tr("High contrast", "เพิ่มความคมชัด")}</span><input type="checkbox" checked={highContrast} onChange={(event) => setHighContrast(event.target.checked)} /></label><label><span>{tr("Color-blind symbols", "สัญลักษณ์ช่วยแยกสี")}</span><input type="checkbox" checked={colorBlind} onChange={(event) => setColorBlind(event.target.checked)} /></label><label className="range-setting"><span>{tr(`Card size · ${cardScale}%`, `ขนาดไพ่ · ${cardScale}%`)}</span><input type="range" min={85} max={120} step={5} value={cardScale} onChange={(event) => setCardScale(Number(event.target.value))} /></label></section></div>}
+      {utilityOpen && <div className="modal-backdrop" onMouseDown={() => setUtilityOpen(false)}><section className="utility-modal" onMouseDown={(event) => event.stopPropagation()}><header><h2>{tr("Menu", "เมนู")}</h2><button className="modal-close-button" onClick={() => setUtilityOpen(false)}>×</button></header><div className="utility-grid"><button onClick={() => { setUtilityOpen(false); setRulesOpen(true); }}>{tr("How to play", "วิธีเล่น")}</button><button onClick={() => { setUtilityOpen(false); setTutorialStep(0); }}>{tr("Tutorial", "สอนเล่น")}</button><button onClick={() => { setUtilityOpen(false); setPreferencesOpen(true); }}>{tr("Settings", "ตั้งค่า")}</button><button onClick={() => { setUtilityOpen(false); void openDaily(); }}>{tr("Daily Cipher", "โจทย์รายวัน")}</button>{auth.user.account_type === "registered" && <button onClick={() => { setUtilityOpen(false); void openLeaderboard(); }}>{tr("Leaderboard", "อันดับ")}</button>}{auth.user.account_type === "registered" && <button onClick={() => { setUtilityOpen(false); void openFriends(); }}>{tr("Friends", "เพื่อน")}</button>}</div></section></div>}
+
+      {preferencesOpen && <div className="modal-backdrop" onMouseDown={() => setPreferencesOpen(false)}><section className="preference-modal" onMouseDown={(event) => event.stopPropagation()}><header><h2>{tr("Settings", "ตั้งค่า")}</h2><button className="modal-close-button" onClick={() => setPreferencesOpen(false)}>×</button></header><label><span>{tr("Sound", "เสียง")}</span><input type="checkbox" checked={soundEnabled} onChange={(event) => setSoundEnabled(event.target.checked)} /></label><label><span>{tr("Reduce motion", "ลดการเคลื่อนไหว")}</span><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /></label><label><span>{tr("High contrast", "เพิ่มความคมชัด")}</span><input type="checkbox" checked={highContrast} onChange={(event) => setHighContrast(event.target.checked)} /></label><label className="range-setting"><span>{tr(`Card size · ${cardScale}%`, `ขนาดไพ่ · ${cardScale}%`)}</span><input type="range" min={85} max={120} step={5} value={cardScale} onChange={(event) => setCardScale(Number(event.target.value))} /></label></section></div>}
 
       {tutorialStep !== null && <div className="tutorial-overlay"><section><span className="tutorial-progress">{tutorialStep + 1}/5</span><span className="eyebrow">{tr("GUIDED TUTORIAL", "บทเรียนแบบแนะนำ")}</span><h2>{[tr("Draw one card", "จั่วไพ่ 1 ใบ"), tr("Choose an opponent card", "เลือกไพ่ของคู่แข่ง"), tr("Guess rank and color", "เดาหน้าไพ่และสี"), tr("Correct: continue or stop", "เดาถูก: เดาต่อหรือหยุด"), tr("Place in a legal + slot", "วางในช่อง + ที่ถูกต้อง")][tutorialStep]}</h2><p>{[tr("Every turn begins by drawing. The card stays outside your rack until the turn resolves.", "ทุกเทิร์นเริ่มด้วยการจั่ว ไพ่จะอยู่นอกมือจนกว่าเทิร์นจะจบ"), tr("Only hidden cards belonging to active opponents can be targeted.", "เลือกได้เฉพาะไพ่คว่ำของคู่แข่งที่ยังเล่นอยู่"), tr("Standard cards need rank and red/black. Joker needs no color.", "ไพ่ปกติต้องเดาหน้าและสี ส่วน Joker ไม่ต้องเลือกสี"), tr("A correct guess reveals the target. Risk another guess or safely stop.", "เดาถูกจะเปิดไพ่เป้าหมาย จากนั้นเสี่ยงเดาต่อหรือหยุดอย่างปลอดภัย"), tr("The server shows only legal positions. Choose + to finish the turn.", "เซิร์ฟเวอร์แสดงเฉพาะตำแหน่งที่ถูกต้อง เลือก + เพื่อจบเทิร์น")][tutorialStep]}</p><div className="tutorial-demo"><span className="mini-card">?</span><b>→</b><span className="mini-card is-accent">{tutorialStep === 2 ? "Q♠" : "+"}</span></div><div className="modal-actions"><button className="secondary-button" disabled={tutorialStep === 0} onClick={() => setTutorialStep(Math.max(0, tutorialStep - 1))}>{tr("Back", "ย้อนกลับ")}</button><button className="primary-button" onClick={() => tutorialStep === 4 ? setTutorialStep(null) : setTutorialStep(tutorialStep + 1)}>{tutorialStep === 4 ? tr("Start playing", "เริ่มเล่น") : tr("Next", "ถัดไป")}</button></div></section></div>}
 
@@ -880,9 +843,7 @@ export function App() {
       {room === null ? (
         <section className="lobby-screen">
           <div className="lobby-card">
-            <span className="eyebrow">{tr("CREATE A NEW TABLE", "สร้างโต๊ะใหม่")}</span>
-            <h1>{tr("Ready to read the table?", "พร้อมอ่านใจคู่แข่งหรือยัง?")}</h1>
-            <p>{tr("Choose the total table size. You can play solo, and server-controlled bots fill every empty seat.", "เลือกจำนวนผู้เล่นรวม คุณเล่นคนเดียวได้ และบอทจากเซิร์ฟเวอร์จะเติมทุกที่นั่งที่ว่าง")}</p>
+            <h1>{tr("Play", "เริ่มเล่น")}</h1>
             <label className="picker-label">{tr("Total players", "จำนวนผู้เล่นทั้งหมด")}</label>
             <div className="player-count-picker">
               {[3, 4, 5, 6].map((count) => (
@@ -892,7 +853,7 @@ export function App() {
               ))}
             </div>
             <div className="lobby-actions">
-              <button className="primary-button create-room-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("public")}>{connectionStatus === "connecting" ? tr("Connecting…", "กำลังเชื่อมต่อ…") : tr(`Quick play · ${desiredPlayers} players`, `เล่นด่วน · ${desiredPlayers} คน`)}</button>
+              <button className="primary-button create-room-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("public")}>{connectionStatus === "connecting" ? tr("Please wait…", "รอสักครู่…") : tr(`Quick play · ${desiredPlayers}`, `เล่นด่วน · ${desiredPlayers} คน`)}</button>
               <button className="secondary-button" disabled={connectionStatus === "connecting"} onClick={() => void joinRoom("code")}>{tr("Create private room", "สร้างห้องส่วนตัว")}</button>
             </div>
             <form className="room-code-join" onSubmit={(event) => { event.preventDefault(); void joinRoom("join-code"); }}>
@@ -900,13 +861,6 @@ export function App() {
               <div><input id="room-code" inputMode="numeric" maxLength={6} placeholder="000000" value={roomCode} onChange={(event) => setRoomCode(event.target.value.replace(/\D/g, "").slice(0, 6))} /><button type="submit" className="secondary-button">{tr("Join", "เข้าห้อง")}</button><button type="button" className="secondary-button" onClick={() => void joinRoom("spectate-code")}>{tr("Watch", "รับชม")}</button></div>
             </form>
           </div>
-          <aside className="rules-glance">
-            <span className="eyebrow">{tr("THE FOUR THINGS TO KNOW", "จำแค่ 4 ข้อนี้ก่อนเล่น")}</span>
-            <h2>{tr("What happens in a turn?", "หนึ่งเทิร์นทำอะไรบ้าง?")}</h2>
-            <ol><li><span>01</span><div><strong>{tr("Draw", "จั่ว")}</strong><small>{tr("Take one card and keep it outside your rack.", "หยิบไพ่ 1 ใบมาไว้นอกมือ")}</small></div></li><li><span>02</span><div><strong>{tr("Guess", "เดา")}</strong><small>{tr("Choose a hidden opponent card, then guess its rank and color.", "เลือกไพ่คว่ำของคู่แข่ง แล้วเดาหน้าไพ่กับสี")}</small></div></li><li><span>03</span><div><strong>{tr("If correct", "ถ้าถูก")}</strong><small>{tr("Guess again, or stop and place your card face-down.", "เดาต่อได้ หรือหยุดแล้ววางไพ่แบบคว่ำ")}</small></div></li><li><span>04</span><div><strong>{tr("If wrong", "ถ้าผิด")}</strong><small>{tr("Reveal the drawn card and place it in a legal slot.", "เปิดไพ่ที่จั่วมา แล้ววางในช่องที่ถูกต้อง")}</small></div></li></ol>
-            <button type="button" className="rules-link-button" onClick={() => setRulesOpen(true)}>{tr("Read the complete rules →", "อ่านกฎทั้งหมดก่อนเล่น →")}</button>
-            <button type="button" className="rules-link-button tutorial-link" onClick={() => setTutorialStep(0)}>{tr("Start guided tutorial →", "เริ่มบทเรียนแนะนำ →")}</button>
-          </aside>
         </section>
       ) : (
         <div className="match-layout">
@@ -914,7 +868,7 @@ export function App() {
             <div>
               <span className="eyebrow">{state?.status === "waiting" ? tr("GAME LOBBY", "ห้องเตรียมเกม") : tr("CIPHERDECK TABLE", "โต๊ะ CipherDeck")}</span>
               <h1>{state?.status === "waiting" ? tr("Get ready", "เตรียมตัวให้พร้อม") : matchStatusLabel}</h1>
-              <p>{state === null ? tr("Syncing with the server…", "กำลังรับข้อมูลจากเซิร์ฟเวอร์…") : tr(`${state.connectedPlayers} human player(s) online · ${state.desiredPlayers} seats`, `ผู้เล่นจริงออนไลน์ ${state.connectedPlayers} คน · โต๊ะนี้รองรับ ${state.desiredPlayers} คน`)}</p>
+              <p>{state === null ? tr("Loading…", "กำลังโหลด…") : tr(`${state.connectedPlayers}/${state.desiredPlayers} players`, `${state.connectedPlayers}/${state.desiredPlayers} คน`)}</p>
               {state?.roomCode !== null && state?.roomCode !== undefined && <div className="room-code-display"><span>{tr("ROOM CODE", "รหัสห้อง")}</span><strong>{state.roomCode}</strong><button type="button" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?room=${state.roomCode}`)}>{tr("Copy invite link", "คัดลอกลิงก์ชวน")}</button></div>}
             </div>
             <div className="toolbar-actions">

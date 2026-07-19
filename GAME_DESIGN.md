@@ -31,7 +31,7 @@
 - Private rooms expose a six-digit code and copyable invite URL. Public Quick Play and the current Create Room flow remain available.
 - The server publishes a bounded public activity log and authoritative per-match guess statistics. Completed matches show a result screen; the host may request a rematch, which returns connected humans to the ready lobby and builds a fresh match.
 - Registered-player results are reported server-to-server to FastAPI and stored for recent history, win rate, accuracy, and streak display. Guests remain ephemeral.
-- Clients provide a guided rules tutorial, reconnect countdown overlay, sound controls, reduced motion, high contrast, color-blind symbols, adjustable card size, language selection, and selectable visual themes.
+- Clients provide a guided rules tutorial, reconnect countdown overlay, sound controls, reduced motion, high contrast, adjustable card size, language selection, and selectable visual themes.
 - Lock the room when the host starts the starting-card selection; do not allow mid-match joins.
 - Pause all game actions when a connected player drops and allow 30 seconds for reconnection.
 - If the player does not reconnect in time, permanently reveal every card in their rack and eliminate them by forfeit. If they had drawn a card but had not inserted it yet, insert and reveal it before resolving the forfeit so no card disappears from authoritative state.

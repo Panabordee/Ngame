@@ -11,7 +11,7 @@ async function mountTable(page: Page, withGuess = false): Promise<void> {
   await page.evaluate(({ opponentCards, ownCards, guess }) => {
     document.querySelector("#root")!.innerHTML = `
       <main class="game-shell">
-        <header class="topbar"><div class="mini-brand"><span>◇</span><strong>CIPHERDECK</strong></div><div class="topbar-status">ONLINE</div><div class="topbar-account">${"<button class='language-switch'>◇</button>".repeat(7)}<div class="profile-chip">Player</div></div></header>
+        <header class="topbar"><div class="mini-brand"><span>◇</span><strong>CIPHERDECK</strong></div><div class="topbar-account"><button class="language-switch">EN</button><button class="language-switch menu-button">Menu</button><div class="profile-chip"><span>P</span><strong>Player</strong></div></div></header>
         <div class="match-layout">
           <section class="match-toolbar"><div><span class="eyebrow">CIPHERDECK TABLE</span><h1>Playing</h1><p>3 human players online</p></div><button class="danger-button">Leave room</button></section>
           <section class="game-table">
