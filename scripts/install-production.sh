@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 REPOSITORY_URL="${REPOSITORY_URL:-https://github.com/Panabordee/Ngame.git}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-feat/cipher-deck}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 DEFAULT_INSTALL_DIR="/opt/ngame"
 NODE_VERSION="${NODE_VERSION:-24.18.0}"
 
@@ -158,8 +158,12 @@ fi
 
 POSTGRES_PASSWORD="$(env_value POSTGRES_PASSWORD)"
 OAUTH_STATE_SECRET="$(env_value OAUTH_STATE_SECRET)"
+MATCH_RESULT_SECRET="$(env_value MATCH_RESULT_SECRET)"
 [[ -n "$POSTGRES_PASSWORD" ]] || POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 [[ -n "$OAUTH_STATE_SECRET" ]] || OAUTH_STATE_SECRET="$(openssl rand -hex 32)"
+[[ -n "$MATCH_RESULT_SECRET" ]] || MATCH_RESULT_SECRET="$(openssl rand -hex 32)"
+read -r -p "Deck Admin Google email(s), comma-separated [optional]: " ADMIN_EMAILS
+ADMIN_EMAILS="${ADMIN_EMAILS:-$(env_value ADMIN_EMAILS)}"
 
 log "Creating production environment and JWT keys"
 mkdir -p secrets
@@ -186,6 +190,9 @@ chmod 600 "$ENV_TEMP"
     "FORWARDED_ALLOW_IPS=$PROXY_IP" \
     'RECONNECT_TIMEOUT_SECONDS=30' \
     'MAX_ROOM_MESSAGES_PER_SECOND=20' \
+    'API_INTERNAL_URL=http://api:8000' \
+    "MATCH_RESULT_SECRET=$MATCH_RESULT_SECRET" \
+    'REDIS_URL=redis://redis:6379' \
     'POSTGRES_DB=ngame' \
     'POSTGRES_USER=ngame' \
     "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
@@ -201,7 +208,9 @@ chmod 600 "$ENV_TEMP"
     'GOOGLE_AUTH_ENABLED=true' \
     "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" \
     "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET" \
-    'GOOGLE_REDIRECT_URI=https://ngame-api.meawsnowball.org/auth/google/callback'
+    'GOOGLE_REDIRECT_URI=https://ngame-api.meawsnowball.org/auth/google/callback' \
+    "ADMIN_EMAILS=$ADMIN_EMAILS" \
+    'API_RATE_LIMIT_PER_MINUTE=120'
 } > "$ENV_TEMP"
 mv -f "$ENV_TEMP" .env
 chmod 600 .env
@@ -215,12 +224,13 @@ COMPOSE=("${DOCKER[@]}" compose --env-file .env)
 
 if "${COMPOSE[@]}" ps --status running postgres --quiet 2>/dev/null | grep -q .; then
   log "Backing up the existing PostgreSQL database"
-  mkdir -p backups
-  chmod 700 backups
-  DB_BACKUP="backups/ngame-$(date -u +%Y%m%dT%H%M%SZ).sql"
+  BACKUP_DIR="${BACKUP_DIR:-/var/backups/ngame}"
+  "${SUDO[@]}" install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$BACKUP_DIR"
+  DB_BACKUP="$BACKUP_DIR/ngame-$(date -u +%Y%m%dT%H%M%SZ).sql"
   "${COMPOSE[@]}" exec -T postgres pg_dump -U ngame -d ngame > "$DB_BACKUP"
   chmod 600 "$DB_BACKUP"
-  printf 'Database backup: %s\n' "$INSTALL_DIR/$DB_BACKUP"
+  [[ -s "$DB_BACKUP" ]] || fail "Database backup is empty"
+  printf 'Database backup: %s\n' "$DB_BACKUP"
 fi
 
 log "Validating configuration and building containers"
