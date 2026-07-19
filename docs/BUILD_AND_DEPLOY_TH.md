@@ -45,6 +45,8 @@ GUEST_AUTH_ENABLED=true
 GUEST_SESSION_TTL_SECONDS=21600
 GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
+ADMIN_EMAILS=admin@example.com
+API_RATE_LIMIT_PER_MINUTE=120
 ```
 
 ถ้า Nginx อยู่คนละเครื่อง ให้ตั้ง `PUBLISH_ADDRESS` เป็น private IP ของ NGAME VM และ `FORWARDED_ALLOW_IPS` เป็น private IP ของ proxy พร้อมเปิดพอร์ต 8080, 8000 และ 2567 ให้เฉพาะ proxy เท่านั้น
@@ -65,7 +67,9 @@ curl -f http://localhost:8000/healthz
 curl -f http://localhost:2567/healthz
 ```
 
-API รัน `alembic upgrade head` ทุกครั้งก่อนเริ่ม Migration `20260717_0002` จะลบบัญชี password เก่าและ refresh session ของบัญชีเหล่านั้นแบบถาวร
+API รัน `alembic upgrade head` ทุกครั้งก่อนเริ่ม Migration ปัจจุบันเพิ่มประวัติแมตช์, social, admin role, deck metadata/assets และ audit log ส่วน Migration `20260717_0002` จะลบบัญชี password เก่าและ refresh session ของบัญชีเหล่านั้นแบบถาวร
+
+ต่างจาก deployment เดิมตรงที่ Compose ใช้ Redis กับทั้ง API และ realtime เพื่อประสาน rate limit, การผูกห้องของบัญชี/Guest, การจองเลขห้อง 6 หลัก, room discovery, recovery checkpoint และ match-result outbox โดยไม่ต้อง publish พอร์ต Redis ออกภายนอก
 
 ## 5. Proxy production และอัปเดต
 

@@ -25,6 +25,7 @@ NGAME คือเกมไพ่ deduction บนเบราว์เซอร
 npm ci
 npm run typecheck
 npm test
+npm run test:mobile --workspace @ngame/client
 python -m pip install -e 'backend[dev]'
 python -m pytest backend/tests
 npm run build --workspace @ngame/client

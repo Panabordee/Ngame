@@ -2,7 +2,7 @@
 
 ## One-time setup
 
-Requirements: Node.js 24.18+, Python 3.12+, and OpenSSL.
+Requirements: Node.js 24.18+, Python 3.12+, and OpenSSL. Redis is optional for a single-process local run and recommended when testing production-like multi-instance behavior.
 
 ```bash
 npm ci
@@ -25,6 +25,20 @@ Create a Google **Web application** OAuth client with:
 
 ## Run three terminals
 
+### What changed from the earlier local flow
+
+- Run `alembic upgrade head` again after pulling. The latest migrations add match/social data and protected deck-theme administration.
+- A plain three-terminal run still works: API rate limits, Guest bindings, account room reservations, and room codes fall back to process memory.
+- For production-like behavior, start Redis and export the same `REDIS_URL` in the API and realtime terminals. This makes those registries and limits atomic across processes.
+- Set `ADMIN_EMAILS` to a comma-separated list of verified Google emails only when deck administration is needed.
+- The browser client is unchanged operationally, but mobile gameplay is landscape-first.
+
+Optional Redis terminal:
+
+```bash
+docker run --name ngame-local-redis --rm -p 6379:6379 redis:7-alpine
+```
+
 API:
 
 ```bash
@@ -43,6 +57,9 @@ export GOOGLE_CLIENT_ID='your-google-client-id'
 export GOOGLE_CLIENT_SECRET='your-google-client-secret'
 export GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 export OAUTH_STATE_SECRET='replace-with-at-least-32-random-characters'
+export REDIS_URL=redis://127.0.0.1:6379 # optional
+export API_RATE_LIMIT_PER_MINUTE=120
+export ADMIN_EMAILS='your-admin-google-email@example.com' # optional
 uvicorn ngame_api.main:app --app-dir backend/src --host 127.0.0.1 --port 8000
 ```
 
@@ -53,6 +70,7 @@ export JWT_PUBLIC_KEY_FILE=../secrets/jwt-public.pem
 export JWT_ISSUER=http://localhost:8000
 export JWT_AUDIENCE=ngame
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
+export REDIS_URL=redis://127.0.0.1:6379 # optional; use the same Redis as the API
 npm run start --workspace @ngame/server
 ```
 
@@ -72,8 +90,10 @@ Open `http://localhost:5173`. Sign in with Google for a persistent profile or us
 npm run typecheck
 npm test
 npm run build --workspace @ngame/client
+npm run test:mobile --workspace @ngame/client
 .venv/bin/python -m pytest backend/tests
 npm run smoke:local --workspace @ngame/server
+npm run soak:bots --workspace @ngame/server -- 100
 ```
 
 The smoke test uses short-lived locally signed JWTs; Google callback/session behavior is covered by the backend tests.

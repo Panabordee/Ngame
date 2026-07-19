@@ -45,6 +45,8 @@ GUEST_AUTH_ENABLED=true
 GUEST_SESSION_TTL_SECONDS=21600
 GOOGLE_REDIRECT_URI=https://ngame-api.ce-nacl.com/auth/google/callback
 COOKIE_SECURE=true
+ADMIN_EMAILS=admin@example.com
+API_RATE_LIMIT_PER_MINUTE=120
 ```
 
 If Nginx is on another host, also set `PUBLISH_ADDRESS` to the NGAME VM private IP and `FORWARDED_ALLOW_IPS` to the proxy private IP. Allow ports 8080, 8000, and 2567 only from that proxy.
@@ -65,7 +67,9 @@ curl -f http://localhost:8000/healthz
 curl -f http://localhost:2567/healthz
 ```
 
-The API runs `alembic upgrade head` on every start. Migration `20260717_0002` permanently removes old password accounts and their refresh sessions.
+The API runs `alembic upgrade head` on every start. Current migrations add match history, social data, admin roles, deck metadata/assets, and audit logs. Migration `20260717_0002` permanently removes old password accounts and their refresh sessions.
+
+Compared with the earlier deployment, Redis is now required by both API and realtime in Compose. It coordinates rate limits, active account/Guest room bindings, six-digit room-code allocation, room discovery, recovery checkpoints, and the match-result outbox. No extra published port is required.
 
 ## 5. Production proxy and updates
 
