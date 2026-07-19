@@ -38,6 +38,7 @@ import {
 } from "./auth.ts";
 import { GameTable } from "./GameTable.tsx";
 import { CardView } from "./CardView.tsx";
+import { formatPlayerLabel, resolveTheme, type ThemeId } from "./uiState.ts";
 
 const REALTIME_URL = import.meta.env.VITE_REALTIME_URL ?? "http://localhost:2567";
 
@@ -65,8 +66,6 @@ const INITIAL_SETTINGS: RoomSettings = {
 };
 
 type SettingsSaveStatus = "synced" | "dirty" | "applying" | "approved";
-type ThemeId = "classic" | "ocean" | "cobalt" | "arctic";
-
 const THEME_OPTIONS: readonly { id: ThemeId; label: string }[] = [
   { id: "classic", label: "Classic Emerald" },
   { id: "ocean", label: "Deep Ocean" },
@@ -93,8 +92,7 @@ export function App() {
   const [language, setLanguage] = useState<"en" | "th">(() => localStorage.getItem("cipherdeck-language") === "th" ? "th" : "en");
   const tr = (english: string, thai: string): string => language === "th" ? thai : english;
   const [theme, setTheme] = useState<ThemeId>(() => {
-    const saved = localStorage.getItem("cipherdeck-theme");
-    return THEME_OPTIONS.some((option) => option.id === saved) ? saved as ThemeId : "classic";
+    return resolveTheme(localStorage.getItem("cipherdeck-theme"));
   });
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -148,6 +146,9 @@ export function App() {
   const inviteJoinAttempted = useRef(false);
   const lastGuessSoundId = useRef(0);
 
+  const playerLabel = (playerId: string | null | undefined): string => {
+    return formatPlayerLabel(state?.players, playerId);
+  };
   const game = state?.game ?? null;
   const otherPlayerGuesses = state?.guessHistory.filter((entry) => entry.actorPlayerId !== auth?.user.id) ?? [];
   const notebookTargets = game?.players
@@ -166,11 +167,6 @@ export function App() {
   const guestRoomNameChanged =
     normalizedGuestRoomName.length > 0 &&
     normalizedGuestRoomName !== roomPlayer?.displayName;
-  const playerLabel = (playerId: string | null | undefined): string => {
-    const player = state?.players.find((candidate) => candidate.id === playerId);
-    if (player === undefined) return "Player";
-    return `${player.displayName}${player.accountType === "guest" ? " · GUEST" : ""}`;
-  };
   const connectionLabel = connectionStatus === "connected" ? tr("Online", "ออนไลน์") : connectionStatus === "connecting" ? tr("Connecting", "กำลังเชื่อมต่อ") : connectionStatus === "reconnecting" ? tr("Reconnecting", "กำลังเชื่อมต่อใหม่") : tr("Offline", "ออฟไลน์");
   const matchStatusLabel = state?.status === "waiting" ? tr("Lobby", "ห้องรอ") : state?.status === "starting" ? tr("Starting", "กำลังเริ่มเกม") : state?.status === "playing" ? tr("Playing", "กำลังเล่น") : state?.status === "paused" ? tr("Paused", "หยุดรอผู้เล่น") : state?.status === "finished" ? tr("Finished", "จบเกม") : null;
   const isMyTurn = game?.currentPlayerId === auth?.user.id;

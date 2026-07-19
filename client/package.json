@@ -8,6 +8,7 @@
     "build": "tsc --project tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:mobile": "playwright test",
+    "test": "node --test tests/ui-state.test.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
