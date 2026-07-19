@@ -125,7 +125,10 @@ export function App() {
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("cipherdeck-sound") !== "off");
   const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem("cipherdeck-reduced-motion") === "on");
   const [highContrast, setHighContrast] = useState(() => localStorage.getItem("cipherdeck-high-contrast") === "on");
-  const [cardScale, setCardScale] = useState(() => Number(localStorage.getItem("cipherdeck-card-scale") ?? 100));
+  const [cardScale, setCardScale] = useState(() => {
+    const stored = Number(localStorage.getItem("cipherdeck-card-scale") ?? 100);
+    return Number.isFinite(stored) && stored >= 85 && stored <= 120 ? stored : 100;
+  });
   const [profileName, setProfileName] = useState("");
   const [profileUsername, setProfileUsername] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -407,6 +410,11 @@ export function App() {
       saveGuestReconnectionToken(joined.reconnectionToken);
     }
     joined.onMessage("state", (message: StateEnvelope) => {
+      if (lastStatus === null) {
+        const latestGuessId = message.guessHistory.at(-1)?.id ?? 0;
+        announcedGuessId.current = latestGuessId;
+        lastGuessSoundId.current = latestGuessId;
+      }
       lastStatus = message.status;
       setServerClockOffsetMs(message.serverTimeMs - Date.now());
       setState(message);
@@ -577,7 +585,12 @@ export function App() {
     setDailyPuzzle(null);
     void loadDailyPuzzle().then((puzzle) => {
       setDailyPuzzle(puzzle);
-      setDailyAttempts(JSON.parse(localStorage.getItem(`cipherdeck-daily-${puzzle.puzzle_id}`) ?? "[]") as string[]);
+      try {
+        const stored = JSON.parse(localStorage.getItem(`cipherdeck-daily-${puzzle.puzzle_id}`) ?? "[]") as unknown;
+        setDailyAttempts(Array.isArray(stored) && stored.every((entry) => typeof entry === "string") ? stored : []);
+      } catch {
+        setDailyAttempts([]);
+      }
       setDailySolved(localStorage.getItem(`cipherdeck-daily-solved-${puzzle.puzzle_id}`) === "yes");
     }).catch((caught) => setError(errorText(caught)));
   }
@@ -756,14 +769,14 @@ export function App() {
               <button
                 type="button"
                 className="modal-close-button"
-                aria-label="ปิดวิธีการเล่น"
+                aria-label={tr("Close rules", "ปิดวิธีการเล่น")}
                 onClick={() => setRulesOpen(false)}
               >
                 ×
               </button>
             </header>
 
-            <div className="rules-flow" aria-label="ลำดับการเล่นในหนึ่งเทิร์น">
+            <div className="rules-flow" aria-label={tr("Turn sequence", "ลำดับการเล่นในหนึ่งเทิร์น")}>
               <span>{tr("1. Draw", "1. จั่วไพ่")}</span>
               <b>→</b>
               <span>{tr("2. Guess an opponent card", "2. เดาไพ่คู่แข่ง")}</span>
@@ -817,7 +830,7 @@ export function App() {
             </div>
 
             <p className="rules-note">
-              <strong>สำคัญ:</strong> ทุกครั้งที่เกมรอให้คุณตัดสินใจ เวลาจะเริ่มนับใหม่ ช่วง 10 วินาทีสุดท้ายจะแสดงคำเตือน หากหมดเวลา ไพ่ทั้งมือจะถูกเปิดและคุณแพ้ทันที
+              <strong>{tr("TIME LIMIT:", "สำคัญ:")}</strong> {tr("The timer resets after every successful action. The final 10 seconds show a warning. If time expires, your rack is revealed and you are eliminated.", "ทุกครั้งที่เกมรอให้คุณตัดสินใจ เวลาจะเริ่มนับใหม่ ช่วง 10 วินาทีสุดท้ายจะแสดงคำเตือน หากหมดเวลา ไพ่ทั้งมือจะถูกเปิดและคุณแพ้ทันที")}
             </p>
           </section>
         </div>
@@ -1036,16 +1049,16 @@ export function App() {
             </>
           ) : state?.startingSelection !== null && state?.startingSelection !== undefined ? (
             <section className="starter-selection">
-              <span className="eyebrow">หาผู้เล่นคนแรก · รอบ {state.startingSelection.round}</span>
-              <h2>{state.startingSelection.phase === "choosing" ? "เลือกไพ่คว่ำ 1 ใบ" : "เปิดไพ่พร้อมกัน"}</h2>
+              <span className="eyebrow">{tr(`WHO STARTS · ROUND ${state.startingSelection.round}`, `หาผู้เล่นคนแรก · รอบ ${state.startingSelection.round}`)}</span>
+              <h2>{state.startingSelection.phase === "choosing" ? tr("Choose one card", "เลือกไพ่คว่ำ 1 ใบ") : tr("Reveal together", "เปิดไพ่พร้อมกัน")}</h2>
               <p>
                 {state.startingSelection.phase === "choosing"
                   ? state.startingSelection.eligiblePlayerIds.includes(auth.user.id)
-                    ? "เลือกใบที่ยังว่าง ไพ่สูงสุดได้เริ่มก่อน และ Joker สูงกว่า K"
-                    : "รอผู้เล่นที่ได้ไพ่สูงสุดเสมอกันเลือกใหม่"
+                    ? tr("Pick any available card. Highest rank starts; Joker beats K.", "เลือกใบที่ยังว่าง ไพ่สูงสุดได้เริ่มก่อน และ Joker สูงกว่า K")
+                    : tr("Waiting for the tied players to choose again.", "รอผู้เล่นที่ได้ไพ่สูงสุดเสมอกันเลือกใหม่")
                   : state.startingSelection.starterPlayerId === null
-                    ? "ไพ่สูงสุดเสมอกัน กำลังเตรียมไพ่ชุดใหม่"
-                    : `${playerLabel(state.startingSelection?.starterPlayerId)} ได้เริ่มก่อน`}
+                    ? tr("Highest cards tied. Preparing a fresh set.", "ไพ่สูงสุดเสมอกัน กำลังเตรียมไพ่ชุดใหม่")
+                    : tr(`${playerLabel(state.startingSelection?.starterPlayerId)} starts`, `${playerLabel(state.startingSelection?.starterPlayerId)} ได้เริ่มก่อน`)}
               </p>
               {state.startingSelection.phase === "choosing" && (
                 <div className="starter-choice-status" aria-live="polite">
@@ -1055,10 +1068,10 @@ export function App() {
                   </span>
                   <p>
                     {state.startingSelection.options.some((option) => option.selectedByPlayerId === auth.user.id)
-                      ? "เลือกแล้ว · รอคนอื่นเลือกให้ครบ"
+                      ? tr("Locked in · waiting for everyone", "เลือกแล้ว · รอคนอื่นเลือกให้ครบ")
                       : state.startingSelection.eligiblePlayerIds.includes(auth.user.id)
-                        ? "ถึงตาคุณ · เลือกไพ่ที่ยังว่างได้เลย"
-                        : "รอผู้เล่นที่เสมอกันเลือกไพ่"}
+                        ? tr("Your choice · pick an available card", "ถึงตาคุณ · เลือกไพ่ที่ยังว่างได้เลย")
+                        : tr("Waiting for tied players", "รอผู้เล่นที่เสมอกันเลือกไพ่")}
                   </p>
                 </div>
               )}
@@ -1085,9 +1098,9 @@ export function App() {
                       />
                       <small>
                         {option.selectedByPlayerId === null
-                          ? `เลือกใบที่ ${index + 1}`
+                          ? tr(`Card ${index + 1}`, `เลือกใบที่ ${index + 1}`)
                           : selectedByMe
-                            ? "ไพ่ของคุณ"
+                            ? tr("Your card", "ไพ่ของคุณ")
                             : playerLabel(option.selectedByPlayerId)}
                       </small>
                     </div>
@@ -1107,8 +1120,10 @@ export function App() {
           ) : (
             <div className="waiting-room">
               <div className="waiting-rune">◇</div>
-              <h2>{roomPlayer?.isHost ? tr("Start whenever you are ready", "เริ่มได้ทันทีเมื่อคุณพร้อม") : tr("Waiting for the host", "รอ Host เริ่มเกม")}</h2>
-              <p>{tr(`You can play solo. Empty seats out of ${state?.desiredPlayers ?? desiredPlayers} will become bots when the match starts.`, `คุณเล่นคนเดียวได้ ที่นั่งว่างจากทั้งหมด ${state?.desiredPlayers ?? desiredPlayers} ที่จะถูกเติมด้วยบอทเมื่อเริ่มเกม`)}</p>
+              <h2>{roomPlayer?.isHost ? tr("Your room is ready", "ห้องพร้อมแล้ว") : tr("Waiting for the host", "รอ Host เริ่มเกม")}</h2>
+              <p>{roomPlayer?.isHost
+                ? tr("Start now or invite friends. Empty seats become bots.", "เริ่มได้เลยหรือชวนเพื่อน ที่นั่งว่างจะถูกเติมด้วยบอท")
+                : tr("Set your status below. The host starts the match.", "กดพร้อมด้านล่าง แล้ว Host จะเป็นผู้เริ่มเกม")}</p>
               {auth.user.account_type === "guest" && roomPlayer !== undefined && (
                 <form
                   className="guest-room-name-editor"
@@ -1118,8 +1133,8 @@ export function App() {
                   }}
                 >
                   <label htmlFor="guest-room-display-name">
-                    <span>{tr("Name in this room", "ชื่อ Guest ในห้องนี้")}</span>
-                    <small>{tr("Editable before the host starts", "แก้ได้ก่อน Host เริ่มเกม")}</small>
+                    <span>{tr("Player name", "ชื่อผู้เล่น")}</span>
+                    <small>{tr("For this room", "สำหรับห้องนี้")}</small>
                   </label>
                   <div>
                     <input
@@ -1135,7 +1150,7 @@ export function App() {
                       className="secondary-button"
                       disabled={!guestRoomNameChanged || guestNameSaving}
                     >
-                      {guestNameSaving ? tr("Saving…", "กำลังบันทึก…") : tr("Save name", "บันทึกชื่อ")}
+                      {guestNameSaving ? tr("Saving…", "กำลังบันทึก…") : guestRoomNameChanged ? tr("Save name", "บันทึกชื่อ") : tr("Name saved", "บันทึกแล้ว")}
                     </button>
                   </div>
                 </form>
@@ -1150,9 +1165,8 @@ export function App() {
                 <section className="room-settings-panel">
                   <header className="room-settings-header">
                     <div>
-                      <span className="eyebrow">{tr("HOST", "สำหรับ Host")}</span>
-                      <h3>{tr("Match settings", "ตั้งค่าแมตช์")}</h3>
-                      <p>{tr("Saving changes clears every non-host ready state.", "การแก้ค่าจะยกเลิกสถานะพร้อมของทุกคน")}</p>
+                      <h3>{tr("Game setup", "ตั้งค่าเกม")}</h3>
+                      <p>{tr("Choose a pace and bot style.", "เลือกความเร็วและรูปแบบบอท")}</p>
                     </div>
                     <span className="settings-mode-badge">
                       {settingsDraft.preset === "classic" ? tr("Classic deck", "สำรับ Classic") : tr("Custom deck", "สำรับ Custom")}
@@ -1163,14 +1177,14 @@ export function App() {
                     event.preventDefault();
                     saveRoomSettings();
                   }}>
-                    <div className="speed-presets"><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 30 })}>⚡ {tr("Speed · 30s", "สปีด · 30 วิ")}</button><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 120 })}>{tr("Standard · 2m", "มาตรฐาน · 2 นาที")}</button><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 0 })}>{tr("Relaxed · no timer", "สบาย ๆ · ไม่จับเวลา")}</button></div>
+                    <div className="speed-presets" aria-label={tr("Pace presets", "รูปแบบความเร็ว")}><button className={settingsDraft.turnSeconds === 30 ? "is-active" : ""} aria-pressed={settingsDraft.turnSeconds === 30} type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 30 })}>⚡ {tr("Fast · 30s", "เร็ว · 30 วิ")}</button><button className={settingsDraft.turnSeconds === 120 ? "is-active" : ""} aria-pressed={settingsDraft.turnSeconds === 120} type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 120 })}>{tr("Standard · 2m", "ปกติ · 2 นาที")}</button><button className={settingsDraft.turnSeconds === 0 ? "is-active" : ""} aria-pressed={settingsDraft.turnSeconds === 0} type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 0 })}>{tr("Relaxed · no timer", "สบาย ๆ · ไม่จับเวลา")}</button></div>
                     <div className="room-settings-fields">
                       <label className="settings-field">
                         <span>{tr("Rules", "รูปแบบกติกา")}</span>
                         <small>{tr("Classic is recommended for your first game", "Classic เหมาะสำหรับเกมแรก")}</small>
                         <select value={settingsDraft.preset} onChange={(event) => setSettingsDraft({ ...settingsDraft, preset: event.target.value as RoomSettings["preset"] })}>
                           <option value="classic">{tr("Classic · full deck", "Classic · สำรับเต็ม")}</option>
-                          <option value="custom" disabled={state.lobbyMode === "public"}>{tr("Custom · configure deck", "Custom · กำหนดสำรับเอง")}</option>
+                          <option value="custom" disabled={state.lobbyMode === "public"}>{state.lobbyMode === "public" ? tr("Custom · private rooms only", "Custom · ใช้ได้ในห้องส่วนตัว") : tr("Custom · configure deck", "Custom · กำหนดสำรับเอง")}</option>
                         </select>
                       </label>
                       <label className="settings-field">
@@ -1296,7 +1310,7 @@ export function App() {
                   {roomPlayer?.ready ? tr("Cancel ready", "ยกเลิกความพร้อม") : tr("Ready", "พร้อมเล่น")}
                 </button>}
                 {roomPlayer?.isHost === true && (
-                  <button type="button" className="primary-button" disabled={!canHostStart} onClick={() => room.send("start-game")}>{state?.players.filter((player) => !player.isHost).every((player) => player.ready) !== true ? tr("Waiting for everyone", "รอทุกคนกดพร้อม") : tr("Start game and fill with bots", "เริ่มเกมและเติมบอท")}</button>
+                  <button type="button" className="primary-button lobby-start-button" disabled={!canHostStart || settingsChanged || !customDeckValid || guestRoomNameChanged || guestNameSaving} onClick={() => room.send("start-game")}>{guestRoomNameChanged || guestNameSaving ? tr("Save your name first", "บันทึกชื่อก่อน") : settingsChanged ? tr("Save settings first", "บันทึกการตั้งค่าก่อน") : state?.players.filter((player) => !player.isHost).every((player) => player.ready) !== true ? tr("Waiting for everyone", "รอทุกคนกดพร้อม") : Math.max(0, state.desiredPlayers - state.players.length) > 0 ? tr(`Start with ${state.desiredPlayers - state.players.length} bot${state.desiredPlayers - state.players.length === 1 ? "" : "s"}`, `เริ่มเกมพร้อมบอท ${state.desiredPlayers - state.players.length} ตัว`) : tr("Start match", "เริ่มเกม")}</button>
                 )}
               </div>
             </div>

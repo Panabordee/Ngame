@@ -63,3 +63,36 @@ test("guess picker stays fully visible in landscape", async ({ page }) => {
   expect(box!.y + box!.height).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/mobile-landscape-guess.png" });
 });
+
+test("room setup stays compact and keeps the start action reachable", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--gold").trim().length > 0);
+  await page.evaluate(() => {
+    document.querySelector("#root")!.innerHTML = `
+      <main class="game-shell"><header class="topbar"><div class="mini-brand"><span>◇</span><strong>CIPHERDECK</strong></div><div class="topbar-account"><button class="language-switch">EN</button><button class="language-switch">Menu</button></div></header>
+      <div class="match-layout"><section class="match-toolbar"><div><span class="eyebrow">GAME LOBBY</span><h1>Get ready</h1><p>1/3 players</p></div><div class="room-code-display"><span>ROOM</span><strong>123456</strong></div><button class="danger-button">Leave</button></section>
+      <div class="waiting-room"><h2>Your room is ready</h2><p>Start now or invite friends. Empty seats become bots.</p>
+      <form class="guest-room-name-editor"><label><span>Player name</span><small>For this room</small></label><div><input value="Player"><button class="secondary-button" disabled>Name saved</button></div></form>
+      <section class="room-settings-panel"><header class="room-settings-header"><div><h3>Game setup</h3><p>Choose a pace and bot style.</p></div><span class="settings-mode-badge">Classic deck</span></header><form class="room-settings"><div class="speed-presets"><button class="is-active">Fast · 30s</button><button>Standard · 2m</button><button>Relaxed</button></div><div class="room-settings-fields">${["Rules", "Bot difficulty", "Action timer"].map((label) => `<label class="settings-field"><span>${label}</span><small>Help</small><select><option>Selected</option></select></label>`).join("")}</div><footer class="room-settings-footer"><div class="settings-save-state"><span class="settings-state-dot"></span><div><strong>Up to date</strong><small>Ready</small></div></div><button class="apply-settings-button state-synced" disabled>Saved</button></footer></form></section>
+      <div class="waiting-player-list"><div><span>Player</span><small>HOST</small></div></div><div class="waiting-actions"><button class="primary-button lobby-start-button">Start with 2 bots</button></div></div></div></main>`;
+  });
+  const metrics = await page.evaluate(() => {
+    const name = document.querySelector(".guest-room-name-editor")!.getBoundingClientRect();
+    const settings = document.querySelector(".room-settings-panel")!.getBoundingClientRect();
+    const start = document.querySelector(".lobby-start-button")!.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      documentHeight: document.documentElement.scrollHeight,
+      nameLeft: name.left,
+      settingsLeft: settings.left,
+      startLeft: start.left,
+      startRight: start.right,
+    };
+  });
+  expect(metrics.documentWidth).toBeLessThanOrEqual(844);
+  expect(metrics.documentHeight).toBeLessThanOrEqual(430);
+  expect(metrics.settingsLeft).toBeGreaterThan(metrics.nameLeft);
+  expect(metrics.startLeft).toBeGreaterThanOrEqual(0);
+  expect(metrics.startRight).toBeLessThanOrEqual(844);
+  await page.screenshot({ path: "test-results/mobile-landscape-lobby.png" });
+});

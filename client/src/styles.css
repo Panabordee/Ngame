@@ -1430,17 +1430,20 @@ summary:focus-visible {
 
 .waiting-room {
   display: grid;
-  min-height: 520px;
-  place-content: center;
+  width: min(960px, 100%);
+  min-height: 0;
+  margin: 0 auto;
+  padding: clamp(18px, 3vw, 30px);
+  align-content: start;
   justify-items: center;
-  border: 1px solid rgba(223, 186, 112, 0.17);
-  border-radius: 30px;
-  background: radial-gradient(circle, rgba(18, 92, 70, 0.25), rgba(4, 12, 10, 0.92));
+  border: 1px solid rgba(var(--line-rgb), 0.2);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.52), rgba(var(--surface-deep-rgb), 0.78));
 }
 
-.waiting-rune { color: var(--gold); font-size: 6rem; animation: orbit-pulse 2s ease-in-out infinite; }
-.waiting-room h2 { margin: 0; font-family: Georgia, serif; font-size: 2.3rem; font-weight: 500; }
-.waiting-room p { color: var(--muted); }
+.waiting-rune { display: none; }
+.waiting-room h2 { margin: 0; font-family: Georgia, serif; font-size: clamp(1.55rem, 3vw, 2rem); font-weight: 500; }
+.waiting-room > p { max-width: 580px; margin: 5px 0 8px; color: var(--muted); font-size: 0.78rem; text-align: center; }
 .settings-summary {
   display: flex;
   width: min(520px, 90vw);
@@ -1456,15 +1459,15 @@ summary:focus-visible {
 .settings-summary span { color: var(--muted); font-size: 0.72rem; }
 
 .room-settings-panel {
-  width: min(900px, 92vw);
-  margin: 22px 0 18px;
+  width: 100%;
+  margin: 10px 0;
   overflow: hidden;
   border: 1px solid rgba(223, 186, 112, 0.25);
-  border-radius: 18px;
+  border-radius: 14px;
   background:
     linear-gradient(135deg, rgba(223, 186, 112, 0.055), transparent 42%),
     rgba(7, 24, 18, 0.94);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.2);
 }
 
 .room-settings-header {
@@ -1472,7 +1475,7 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 20px 22px 17px;
+  padding: 13px 16px;
   border-bottom: 1px solid rgba(223, 186, 112, 0.12);
 }
 
@@ -1480,7 +1483,7 @@ summary:focus-visible {
   margin: 3px 0 2px;
   color: var(--cream);
   font-family: Georgia, serif;
-  font-size: 1.45rem;
+  font-size: 1.2rem;
   font-weight: 500;
 }
 
@@ -1503,8 +1506,8 @@ summary:focus-visible {
 
 .room-settings {
   display: grid;
-  gap: 18px;
-  padding: 20px 22px 22px;
+  gap: 10px;
+  padding: 13px 16px 15px;
 }
 
 .room-settings-fields {
@@ -1592,7 +1595,7 @@ summary:focus-visible {
   min-width: 0;
   grid-template-rows: auto auto 1fr;
   gap: 4px;
-  padding: 13px;
+  padding: 10px;
   border: 1px solid #29463b;
   border-radius: 10px;
   background: rgba(9, 27, 21, 0.82);
@@ -1611,7 +1614,7 @@ summary:focus-visible {
 }
 
 .settings-field > small {
-  min-height: 27px;
+  min-height: 0;
   color: #73877f;
   font-size: 0.58rem;
   line-height: 1.4;
@@ -1635,7 +1638,7 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding-top: 17px;
+  padding-top: 10px;
   border-top: 1px solid rgba(143, 160, 153, 0.14);
 }
 
@@ -1747,9 +1750,9 @@ summary:focus-visible {
 .resolved-starters span { padding: 6px 9px; border: 1px solid #315346; border-radius: 999px; color: #a8d9c7; font-size: 0.68rem; }
 .waiting-player-list {
   display: grid;
-  width: min(420px, 90vw);
+  width: 100%;
   gap: 7px;
-  margin: 14px 0;
+  margin: 2px 0 10px;
 }
 .waiting-player-list > div {
   display: flex;
@@ -1765,15 +1768,26 @@ summary:focus-visible {
 .host-player-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .host-player-actions button { padding: 5px 8px; border: 1px solid rgba(var(--line-rgb), .22); border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; font-size: .62rem; }
 .host-player-actions button.is-danger { color: #ff9d96; border-color: rgba(216, 93, 84, .3); }
-.speed-presets { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
-.speed-presets button { padding: 7px 10px; border: 1px solid rgba(var(--line-rgb), .22); border-radius: 999px; color: var(--muted); background: rgba(var(--surface-rgb), .6); cursor: pointer; }
+.speed-presets { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; }
+.speed-presets button {
+  padding: 7px 11px;
+  border: 1px solid rgba(var(--line-rgb), .26);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(var(--surface-rgb), .56);
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+.speed-presets button:hover { border-color: rgba(var(--line-rgb), .5); color: var(--cream); transform: translateY(-1px); }
+.speed-presets button:active { transform: translateY(1px) scale(.98); }
+.speed-presets button.is-active { border-color: rgba(var(--line-rgb), .72); color: var(--cream); background: rgba(var(--line-rgb), .16); box-shadow: 0 0 0 3px rgba(var(--line-rgb), .07); }
 
 .guest-room-name-editor {
   display: grid;
-  width: min(420px, 90vw);
+  width: min(520px, 100%);
   gap: 8px;
-  margin-top: 16px;
-  padding: 13px;
+  margin-top: 8px;
+  padding: 10px;
   border: 1px solid rgba(223, 186, 112, 0.25);
   border-radius: 9px;
   background: rgba(10, 31, 24, 0.76);
@@ -1799,8 +1813,64 @@ summary:focus-visible {
   color: var(--cream);
   background: #091310;
 }
-.waiting-actions { display: flex; gap: 10px; }
+.guest-room-name-editor button:disabled { color: var(--muted); border-color: rgba(var(--line-rgb), .14); background: rgba(var(--surface-rgb), .4); opacity: .7; }
+.waiting-actions { display: flex; width: 100%; justify-content: center; gap: 10px; }
 .ready-active { border-color: #48b893; color: #9be0c8; }
+
+.lobby-start-button {
+  position: relative;
+  isolation: isolate;
+  min-width: min(100%, 280px);
+  overflow: hidden;
+  padding: 13px 24px;
+  border: 1px solid rgba(var(--line-rgb), .76);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(var(--line-rgb), .18);
+  letter-spacing: .035em;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.lobby-start-button::before {
+  position: absolute;
+  z-index: -1;
+  top: -80%;
+  left: -40%;
+  width: 30%;
+  height: 260%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.24), transparent);
+  content: "";
+  transform: rotate(18deg);
+  animation: lobby-button-shine 3.6s ease-in-out infinite;
+}
+
+.lobby-start-button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-2px); box-shadow: 0 17px 42px rgba(var(--line-rgb), .27); }
+.lobby-start-button:active:not(:disabled) { transform: translateY(1px) scale(.985); box-shadow: 0 7px 20px rgba(var(--line-rgb), .18); }
+.lobby-start-button:disabled::before { display: none; }
+
+.guest-room-name-editor button,
+.apply-settings-button,
+.waiting-actions .secondary-button {
+  transition: transform 150ms ease, filter 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+.guest-room-name-editor button:hover:not(:disabled),
+.apply-settings-button:hover:not(:disabled),
+.waiting-actions .secondary-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+.guest-room-name-editor button:active:not(:disabled),
+.apply-settings-button:active:not(:disabled),
+.waiting-actions .secondary-button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
+
+@keyframes lobby-button-shine {
+  0%, 55% { left: -40%; opacity: 0; }
+  65% { opacity: 1; }
+  85%, 100% { left: 120%; opacity: 0; }
+}
+
+:root[data-motion="reduced"] .lobby-start-button::before { animation: none; display: none; }
+:root[data-motion="reduced"] .speed-presets button,
+:root[data-motion="reduced"] .lobby-start-button,
+:root[data-motion="reduced"] .guest-room-name-editor button,
+:root[data-motion="reduced"] .apply-settings-button,
+:root[data-motion="reduced"] .waiting-actions .secondary-button { transition: none; }
 
 @media (max-width: 1180px) {
   .control-dock { grid-template-columns: 1fr auto; }
@@ -1914,6 +1984,40 @@ summary:focus-visible {
   .room-code-display { margin: 0; }
   .room-code-display strong { font-size: .78rem; }
   .match-toolbar .danger-button { min-height: 40px; padding: 7px 10px; }
+
+  .waiting-room {
+    grid-template-columns: minmax(210px, .8fr) minmax(390px, 1.7fr);
+    grid-auto-rows: min-content;
+    align-items: start;
+    justify-items: stretch;
+    gap: 5px 10px;
+    padding: 9px;
+    border-radius: 12px;
+  }
+  .waiting-room h2 { grid-column: 1; margin: 0; font-size: 1.15rem; text-align: left; }
+  .waiting-room > p { grid-column: 1; margin: 0 0 2px; font-size: .62rem; text-align: left; }
+  .guest-room-name-editor { grid-column: 1; width: 100%; margin: 0; padding: 7px; gap: 4px; }
+  .guest-room-name-editor label small { display: none; }
+  .guest-room-name-editor > div { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+  .guest-room-name-editor input, .guest-room-name-editor button { min-height: 36px; padding: 6px 8px; }
+  .room-settings-panel { grid-column: 2; grid-row: 1 / span 6; margin: 0; }
+  .room-settings-header { padding: 8px 10px; }
+  .room-settings-header h3 { font-size: .95rem; }
+  .room-settings-header p, .settings-mode-badge { font-size: .5rem; }
+  .room-settings { gap: 6px; padding: 7px 9px 9px; }
+  .speed-presets { gap: 4px; }
+  .speed-presets button { padding: 5px 7px; font-size: .58rem; }
+  .room-settings-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .settings-field { gap: 2px; padding: 6px; }
+  .settings-field > small { display: none; }
+  .room-settings input, .room-settings select { height: 34px; padding-inline: 7px; font-size: .6rem; }
+  .room-settings-footer { flex-direction: row; align-items: center; gap: 6px; padding-top: 5px; }
+  .settings-save-state small { display: none; }
+  .apply-settings-button { width: auto; min-width: 120px; padding: 8px 10px; }
+  .waiting-player-list { grid-column: 1; margin: 0; gap: 3px; }
+  .waiting-player-list > div { padding: 7px 8px; font-size: .65rem; }
+  .waiting-actions { grid-column: 1; }
+  .lobby-start-button { width: 100%; min-width: 0; padding: 9px 12px; }
 
   .game-table { min-height: 0; padding: 7px; border-radius: 14px; box-shadow: inset 0 0 0 3px var(--table-ring), inset 0 0 0 4px rgba(var(--line-rgb), .16); }
   .table-glow { display: none; }
