@@ -1513,6 +1513,22 @@ summary:focus-visible {
   gap: 10px;
 }
 
+.custom-deck-guidance {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 0.65rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.custom-deck-guidance.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: var(--danger);
+}
+
 .settings-field {
   display: grid;
   min-width: 0;

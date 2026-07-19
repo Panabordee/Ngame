@@ -205,6 +205,12 @@ export function App() {
           ),
         );
   const settingsChanged = state !== null && !roomSettingsEqual(settingsDraft, state.settings);
+  const customDeckMinimum = Math.max(24, (state?.desiredPlayers ?? 2) * (settingsDraft.drawRounds + 2));
+  const customDeckMaximum = 52 + settingsDraft.jokerCount;
+  const customDeckValid = settingsDraft.preset !== "custom" || (
+    settingsDraft.totalCards >= customDeckMinimum &&
+    settingsDraft.totalCards <= customDeckMaximum
+  );
   const visibleSettingsStatus = settingsSaveStatus === "applying"
     ? "applying"
     : settingsChanged
@@ -391,7 +397,12 @@ export function App() {
       window.setTimeout(() => setTableEmote((current) => current?.sentAtMs === message.sentAtMs ? null : current), 3_000);
     });
     joined.onMessage("error", (message: RoomErrorMessage) => {
-      setError(`${message.code}: ${message.message}`);
+      setError(message.code === "INVALID_DECK"
+        ? tr(
+            "These Custom settings cannot make a playable deck. Use 24–56 total cards and 2–4 Jokers. Total cards cannot exceed 52 + Jokers (54 with 2, 55 with 3, or 56 with 4). If needed, add cards or reduce Draw rounds so every player can receive at least 2 starting cards after the draw reserve.",
+            "ค่า Custom ชุดนี้สร้างสำรับที่เล่นไม่ได้ ใช้ไพ่รวม 24–56 ใบและ Joker 2–4 ใบ โดยไพ่รวมต้องไม่เกิน 52 + จำนวน Joker (Joker 2 ใบใช้ได้สูงสุด 54, 3 ใบสูงสุด 55, 4 ใบสูงสุด 56) หากยังบันทึกไม่ได้ ให้เพิ่มไพ่รวมหรือลดรอบจั่ว เพื่อให้เหลือไพ่เริ่มต้นอย่างน้อยคนละ 2 ใบหลังกันไพ่สำหรับจั่ว",
+          )
+        : message.message);
       if (["INVALID_GUEST_NAME", "GUEST_ONLY", "NAME_TAKEN", "MATCH_ALREADY_STARTED"].includes(message.code)) {
         setGuestNameSaving(false);
       }
@@ -1068,8 +1079,8 @@ export function App() {
                   }}
                 >
                   <label htmlFor="guest-room-display-name">
-                    <span>ชื่อ Guest ในห้องนี้</span>
-                    <small>แก้ได้ก่อน Host เริ่มเกม</small>
+                    <span>{tr("Name in this room", "ชื่อ Guest ในห้องนี้")}</span>
+                    <small>{tr("Editable before the host starts", "แก้ได้ก่อน Host เริ่มเกม")}</small>
                   </label>
                   <div>
                     <input
@@ -1085,27 +1096,27 @@ export function App() {
                       className="secondary-button"
                       disabled={!guestRoomNameChanged || guestNameSaving}
                     >
-                      {guestNameSaving ? "กำลังบันทึก…" : "บันทึกชื่อ"}
+                      {guestNameSaving ? tr("Saving…", "กำลังบันทึก…") : tr("Save name", "บันทึกชื่อ")}
                     </button>
                   </div>
                 </form>
               )}
               {state !== null && roomPlayer?.isHost !== true && (
                 <div className="settings-summary">
-                  <strong>{state.settings.preset === "classic" ? "กติกา Classic" : `กติกา Custom · ${state.settings.totalCards} ใบ`}</strong>
-                  <span>จั่วได้ {state.settings.drawRounds} รอบ · {state.settings.turnSeconds === 0 ? "ไม่จำกัดเวลา" : `${state.settings.turnSeconds} วินาทีต่อการตัดสินใจ`}</span>
+                  <strong>{state.settings.preset === "classic" ? tr("Classic rules", "กติกา Classic") : tr(`Custom · ${state.settings.totalCards} cards`, `กติกา Custom · ${state.settings.totalCards} ใบ`)}</strong>
+                  <span>{tr(`${state.settings.drawRounds} draw rounds · ${state.settings.turnSeconds === 0 ? "no timer" : `${state.settings.turnSeconds}s per action`}`, `จั่วได้ ${state.settings.drawRounds} รอบ · ${state.settings.turnSeconds === 0 ? "ไม่จำกัดเวลา" : `${state.settings.turnSeconds} วินาทีต่อการตัดสินใจ`}`)}</span>
                 </div>
               )}
               {roomPlayer?.isHost === true && state !== null && (
                 <section className="room-settings-panel">
                   <header className="room-settings-header">
                     <div>
-                      <span className="eyebrow">สำหรับ Host</span>
-                      <h3>ตั้งค่าแมตช์</h3>
-                      <p>การแก้ค่าจะยกเลิกสถานะพร้อมของทุกคน</p>
+                      <span className="eyebrow">{tr("HOST", "สำหรับ Host")}</span>
+                      <h3>{tr("Match settings", "ตั้งค่าแมตช์")}</h3>
+                      <p>{tr("Saving changes clears every non-host ready state.", "การแก้ค่าจะยกเลิกสถานะพร้อมของทุกคน")}</p>
                     </div>
                     <span className="settings-mode-badge">
-                      {settingsDraft.preset === "classic" ? "สำรับ Classic" : "สำรับ Custom"}
+                      {settingsDraft.preset === "classic" ? tr("Classic deck", "สำรับ Classic") : tr("Custom deck", "สำรับ Custom")}
                     </span>
                   </header>
 
@@ -1116,11 +1127,11 @@ export function App() {
                     <div className="speed-presets"><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 30 })}>⚡ {tr("Speed · 30s", "สปีด · 30 วิ")}</button><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 120 })}>{tr("Standard · 2m", "มาตรฐาน · 2 นาที")}</button><button type="button" onClick={() => setSettingsDraft({ ...settingsDraft, turnSeconds: 0 })}>{tr("Relaxed · no timer", "สบาย ๆ · ไม่จับเวลา")}</button></div>
                     <div className="room-settings-fields">
                       <label className="settings-field">
-                        <span>รูปแบบกติกา</span>
-                        <small>Classic เหมาะสำหรับเกมแรก</small>
+                        <span>{tr("Rules", "รูปแบบกติกา")}</span>
+                        <small>{tr("Classic is recommended for your first game", "Classic เหมาะสำหรับเกมแรก")}</small>
                         <select value={settingsDraft.preset} onChange={(event) => setSettingsDraft({ ...settingsDraft, preset: event.target.value as RoomSettings["preset"] })}>
-                          <option value="classic">Classic · สำรับเต็ม</option>
-                          <option value="custom" disabled={state.lobbyMode === "public"}>Custom · กำหนดสำรับเอง</option>
+                          <option value="classic">{tr("Classic · full deck", "Classic · สำรับเต็ม")}</option>
+                          <option value="custom" disabled={state.lobbyMode === "public"}>{tr("Custom · configure deck", "Custom · กำหนดสำรับเอง")}</option>
                         </select>
                       </label>
                       <label className="settings-field">
@@ -1133,39 +1144,50 @@ export function App() {
                         </select>
                       </label>
                       <label className="settings-field">
-                        <span>เวลาต่อการตัดสินใจ</span>
-                        <small>รีเซ็ตหลังทำ action สำเร็จ</small>
+                        <span>{tr("Action timer", "เวลาต่อการตัดสินใจ")}</span>
+                        <small>{tr("Resets after every successful action", "รีเซ็ตหลังทำ action สำเร็จ")}</small>
                         <select value={settingsDraft.turnSeconds} onChange={(event) => setSettingsDraft({ ...settingsDraft, turnSeconds: Number(event.target.value) as RoomSettings["turnSeconds"] })}>
-                          <option value={0}>ไม่จำกัดเวลา</option>
-                          <option value={30}>30 วินาที</option>
-                          <option value={60}>1 นาที</option>
-                          <option value={90}>1 นาที 30 วินาที</option>
-                          <option value={120}>2 นาที</option>
-                          <option value={180}>3 นาที</option>
-                          <option value={300}>5 นาที</option>
+                          <option value={0}>{tr("No timer", "ไม่จำกัดเวลา")}</option>
+                          <option value={30}>{tr("30 seconds", "30 วินาที")}</option>
+                          <option value={60}>{tr("1 minute", "1 นาที")}</option>
+                          <option value={90}>{tr("1 minute 30 seconds", "1 นาที 30 วินาที")}</option>
+                          <option value={120}>{tr("2 minutes", "2 นาที")}</option>
+                          <option value={180}>{tr("3 minutes", "3 นาที")}</option>
+                          <option value={300}>{tr("5 minutes", "5 นาที")}</option>
                         </select>
                       </label>
                       {settingsDraft.preset === "custom" && (
                         <>
                           <label className="settings-field">
-                            <span>จำนวนไพ่ทั้งหมด</span>
-                            <small>24–56 ใบ</small>
-                            <input type="number" min={24} max={56} value={settingsDraft.totalCards} onChange={(event) => setSettingsDraft({ ...settingsDraft, totalCards: Number(event.target.value) })} />
+                            <span>{tr("Total cards", "จำนวนไพ่ทั้งหมด")}</span>
+                            <small>{tr(`${customDeckMinimum}–${customDeckMaximum} for this match`, `${customDeckMinimum}–${customDeckMaximum} ใบสำหรับแมตช์นี้`)}</small>
+                            <input type="number" min={customDeckMinimum} max={customDeckMaximum} value={settingsDraft.totalCards} onChange={(event) => setSettingsDraft({ ...settingsDraft, totalCards: Number(event.target.value) })} />
                           </label>
                           <label className="settings-field">
-                            <span>จำนวนรอบจั่ว</span>
-                            <small>แต่ละคนจั่วได้ 1–8 รอบ</small>
+                            <span>{tr("Draw rounds", "จำนวนรอบจั่ว")}</span>
+                            <small>{tr("Reserve 1–8 draws per player", "แต่ละคนจั่วได้ 1–8 รอบ")}</small>
                             <input type="number" min={1} max={8} value={settingsDraft.drawRounds} onChange={(event) => setSettingsDraft({ ...settingsDraft, drawRounds: Number(event.target.value) })} />
                           </label>
                           <label className="settings-field">
-                            <span>จำนวน Joker</span>
-                            <small>ไพ่พิเศษในสำรับ</small>
+                            <span>{tr("Jokers", "จำนวน Joker")}</span>
+                            <small>{tr("2–4 cards", "ไพ่พิเศษ 2–4 ใบ")}</small>
                             <select value={settingsDraft.jokerCount} onChange={(event) => setSettingsDraft({ ...settingsDraft, jokerCount: Number(event.target.value) as RoomSettings["jokerCount"] })}>
-                              <option value={2}>2 ใบ</option>
-                              <option value={3}>3 ใบ</option>
-                              <option value={4}>4 ใบ</option>
+                              <option value={2}>{tr("2 cards", "2 ใบ")}</option>
+                              <option value={3}>{tr("3 cards", "3 ใบ")}</option>
+                              <option value={4}>{tr("4 cards", "4 ใบ")}</option>
                             </select>
                           </label>
+                          <p className={`custom-deck-guidance${customDeckValid ? "" : " is-invalid"}`}>
+                            {customDeckValid
+                              ? tr(
+                                  `${settingsDraft.totalCards} cards works: ${settingsDraft.jokerCount} Jokers and enough cards for ${state.desiredPlayers} players with ${settingsDraft.drawRounds} draw rounds.`,
+                                  `${settingsDraft.totalCards} ใบใช้ได้: มี Joker ${settingsDraft.jokerCount} ใบ และเพียงพอสำหรับ ${state.desiredPlayers} คนที่จั่วได้ ${settingsDraft.drawRounds} รอบ`,
+                                )
+                              : tr(
+                                  `Choose ${customDeckMinimum}–${customDeckMaximum} total cards. This match needs at least ${customDeckMinimum} cards for ${state.desiredPlayers} players and ${settingsDraft.drawRounds} draw rounds; ${settingsDraft.jokerCount} Jokers limit the deck to ${customDeckMaximum}.`,
+                                  `เลือกไพ่รวม ${customDeckMinimum}–${customDeckMaximum} ใบ แมตช์นี้ต้องมีอย่างน้อย ${customDeckMinimum} ใบสำหรับ ${state.desiredPlayers} คนและจั่ว ${settingsDraft.drawRounds} รอบ ส่วน Joker ${settingsDraft.jokerCount} ใบทำให้สำรับมีได้สูงสุด ${customDeckMaximum} ใบ`,
+                                )}
+                          </p>
                         </>
                       )}
                     </div>
@@ -1176,20 +1198,20 @@ export function App() {
                         <div>
                           <strong>
                             {visibleSettingsStatus === "applying"
-                              ? "กำลังส่งค่าไปยังเซิร์ฟเวอร์"
+                              ? tr("Applying…", "กำลังส่งค่าไปยังเซิร์ฟเวอร์")
                               : visibleSettingsStatus === "approved"
-                                ? "บันทึกการตั้งค่าแล้ว"
+                                ? tr("Settings saved", "บันทึกการตั้งค่าแล้ว")
                                 : visibleSettingsStatus === "dirty"
-                                  ? "มีค่าที่ยังไม่ได้บันทึก"
-                                  : "การตั้งค่าเป็นปัจจุบัน"}
+                                  ? tr("Unsaved changes", "มีค่าที่ยังไม่ได้บันทึก")
+                                  : tr("Settings are up to date", "การตั้งค่าเป็นปัจจุบัน")}
                           </strong>
-                          <small>{visibleSettingsStatus === "dirty" ? "กดบันทึกเพื่อใช้ค่าใหม่" : "แก้ค่าแล้วทุกคนต้องกดพร้อมใหม่"}</small>
+                          <small>{visibleSettingsStatus === "dirty" ? tr("Save to apply", "กดบันทึกเพื่อใช้ค่าใหม่") : tr("Changes clear non-host ready states", "แก้ค่าแล้วทุกคนต้องกดพร้อมใหม่")}</small>
                         </div>
                       </div>
                       <button
                         type="submit"
                         className={`apply-settings-button state-${visibleSettingsStatus}`}
-                        disabled={!settingsChanged || visibleSettingsStatus === "applying"}
+                        disabled={!settingsChanged || !customDeckValid || visibleSettingsStatus === "applying"}
                       >
                         {visibleSettingsStatus === "applying" ? (
                           <span className="settings-spinner" aria-hidden="true" />
@@ -1199,12 +1221,12 @@ export function App() {
                           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
                         )}
                         {visibleSettingsStatus === "applying"
-                          ? "กำลังบันทึก…"
+                          ? tr("Saving…", "กำลังบันทึก…")
                           : visibleSettingsStatus === "approved"
-                            ? "บันทึกแล้ว"
+                            ? tr("Saved", "บันทึกแล้ว")
                             : settingsChanged
-                              ? "บันทึกการตั้งค่า"
-                              : "บันทึกแล้ว"}
+                              ? tr("Save settings", "บันทึกการตั้งค่า")
+                              : tr("Saved", "บันทึกแล้ว")}
                       </button>
                     </footer>
                   </form>
@@ -1218,7 +1240,7 @@ export function App() {
                       {player.accountType === "guest" && <em className="guest-badge">GUEST</em>}
                       {player.isBot && <em className="guest-badge">BOT</em>}
                     </span>
-                    <small>{player.isHost ? "HOST" : player.ready ? "พร้อม" : "ยังไม่พร้อม"}</small>
+                    <small>{player.isHost ? "HOST" : player.ready ? tr("READY", "พร้อม") : tr("NOT READY", "ยังไม่พร้อม")}</small>
                     {roomPlayer?.isHost === true && !player.isHost && !player.isBot && <span className="host-player-actions">
                       <button type="button" onClick={() => room.send("transfer-host", { playerId: player.id })}>{tr("Make host", "ตั้งเป็น Host")}</button>
                       <button type="button" className="is-danger" onClick={() => room.send("kick-player", { playerId: player.id })}>{tr("Remove", "นำออก")}</button>

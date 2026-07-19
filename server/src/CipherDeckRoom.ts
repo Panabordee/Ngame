@@ -820,7 +820,7 @@ export class CipherDeckRoom extends Room<{
         ) {
           throw new RuleViolation(
             "INVALID_DECK",
-            "Custom rules require 2–4 Jokers and a compatible total card count.",
+            "Custom decks need 24–56 total cards and 2–4 Jokers. Total cards cannot exceed 52 plus the Joker count.",
           );
         }
         computeInitialHandSizes(
