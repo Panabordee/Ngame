@@ -21,7 +21,9 @@ RUN python -m pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations
+COPY backend/docker-entrypoint.sh /usr/local/bin/ngame-api-entrypoint
+RUN chmod 755 /usr/local/bin/ngame-api-entrypoint
 
-USER ngame
+ENTRYPOINT ["/usr/local/bin/ngame-api-entrypoint"]
 EXPOSE 8000
 CMD ["uvicorn", "ngame_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
